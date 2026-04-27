@@ -48,6 +48,18 @@ torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.enabled = False
 
 # =========================
+# 1.2. 导入自定义模块切换训练模式
+#==========================
+def set_trainable(model, module_name="adfs_optimizer", trainable=False):
+    # 检查是否使用了 DataParallel
+    real_model = model.module if hasattr(model, 'module') else model
+    
+    for name, param in real_model.named_parameters():
+        if module_name in name:
+            param.requires_grad = trainable
+            # 打印一下确认状态（可选）
+            # print(f"Setting {name} trainable={trainable}")
+# =========================
 # 2. 参数设置
 # =========================
 parser = argparse.ArgumentParser("TFGridNetV2 training")
@@ -56,25 +68,25 @@ parser = argparse.ArgumentParser("TFGridNetV2 training")
 parser.add_argument(
     "--train_wav_scp",
     type=str,
-    default="/root/autodl-tmp/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt",
     help="训练集 wav_scp 列表"
 )
 parser.add_argument(
     "--train_mix_dir",
     type=str,
-    default="/root/autodl-tmp/Mic8_2s_gpurir/generated_data/train/mix",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/mix",
     help="训练集 mix 目录"
 )
 parser.add_argument(
     "--train_ref_dir",
     type=str,
-    default="/root/autodl-tmp/Mic8_2s_gpurir/generated_data/train/noreverb_ref",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/noreverb_ref",
     help="训练集参考干净语音目录"
 )
 parser.add_argument(
     "--train_mic_dir",
     type=str,
-    default="root/autodl-tmp/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
     help="训练集麦克风阵列信息目录"
 )
 
@@ -82,34 +94,34 @@ parser.add_argument(
 parser.add_argument(
     "--val_wav_scp",
     type=str,
-    default="/root/autodl-tmp/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt",
     help="验证集 wav_scp 列表"
 )
 parser.add_argument(
     "--val_mix_dir",
     type=str,
-    default="/root/autodl-tmp/Mic8_2s_gpurir/generated_data/val/mix",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/mix",
     help="验证集 mix 目录"
 )
 parser.add_argument(
     "--val_ref_dir",
     type=str,
-    default="/root/autodl-tmp/Mic8_2s_gpurir/generated_data/val/noreverb_ref",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/noreverb_ref",
     help="验证集参考干净语音目录"
 )
 parser.add_argument(
     "--val_mic_dir",
     type=str,
-    default="/root/autodl-tmp/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
     help="验证集麦克风阵列信息目录"
 )
 
 # -------- 训练超参数 --------
 parser.add_argument("--gpuid", type=int, default=0, help="使用哪张 GPU")
 parser.add_argument("--num_epoch", type=int, default=100, help="训练轮数")
-parser.add_argument("--num_worker", type=int, default=8, help="DataLoader worker 数")
+parser.add_argument("--num_worker", type=int, default=4, help="DataLoader worker 数")
 parser.add_argument("--lr", type=float, default=1e-3, help="学习率")
-parser.add_argument("--batch_size", type=int, default=8, help="batch size")
+parser.add_argument("--batch_size", type=int, default=2, help="batch size")
 parser.add_argument("--fft_len", type=int, default=512)
 parser.add_argument("--channel", type=int, default=8)
 parser.add_argument("--repeat", type=int, default=1)
@@ -119,7 +131,7 @@ parser.add_argument("--resume", action="store_true", help="是否从已有模型
 parser.add_argument(
     "--resume_model",
     type=str,
-    default="model_miso_new_data/network_epoch17.pth",
+    default="model_test",
     help="继续训练时加载的模型路径"
 )
 
@@ -217,18 +229,36 @@ if __name__ == "__main__":
         network.load_state_dict(state_dict)
 
     network = network.to(device)
+    # --- 在主循环开始前的临时测试代码 ---
+    log_info("--- Running ADFS Integration Check ---")
+
+    # 1. 检查 ADFS 是否在网络中
+    if hasattr(network, "adfs_optimizer") or (hasattr(network, "module") and hasattr(network.module, "adfs_optimizer")):
+        log_info("Success: ADFS module found in the network.")
+    else:
+        log_info("Error: ADFS module NOT found!")
+
+    # 2. 检查参数冻结状态 (假设现在是第 1 个 Epoch)
+    for name, param in network.named_parameters():
+        if "adfs_optimizer" in name:
+            log_info(f"Param: {name} | Requires_Grad: {param.requires_grad}")
+
+    log_info("--- Check Done ---")    
 
     # =========================
     # 7. 优化器、损失函数、日志
     # =========================
-    optimizer = optim.Adam(network.parameters(), lr=args.lr)
+    optimizer = optim.Adam(
+        filter(lambda p: p.requires_grad, network.parameters()), 
+        lr=args.lr
+    )
     loss_function = nn.MSELoss()
 
     writer = SummaryWriter(
         "runs/Fine_tuning_{}/".format(time.strftime("%Y-%m-%d-%H-%M-%S", NowTime))
     )
 
-    modelpath = "model_miso_new_data/"
+    modelpath = "model_test/"
     os.makedirs(modelpath, exist_ok=True)
 
     loss_train_epoch = []
@@ -242,6 +272,22 @@ if __name__ == "__main__":
     # =========================
     for epoch in range(args.num_epoch):
         epoch_id = epoch + 1
+        # === 新增：分阶段训练逻辑 ===
+        # 假设前 10 个 Epoch 冻结 ADFS，第 11 个 Epoch 开始解冻训练
+        if epoch_id <= 10:
+            # 冻结 ADFS
+            set_trainable(network, module_name="adfs_optimizer", trainable=False)
+            if epoch_id == 1:
+                log_info("Stage 1: ADFS is frozen. Training backbone only.")
+        else:
+            # 解冻 ADFS
+            set_trainable(network, module_name="adfs_optimizer", trainable=True)
+            if epoch_id == 11:
+                log_info("Stage 2: ADFS is unfrozen. Training all modules.")
+                # 注意：如果解冻了新参数，有些情况下需要重新把新参数告知优化器
+                # 但如果你想简单处理，可以在这里重新定义一次 optimizer (可选)
+                # optimizer = optim.Adam(filter(lambda p: p.requires_grad, network.parameters()), lr=args.lr)
+        # =========================
 
         train_loader = make_fix_loader(
             wav_scp=train_wav_scp,
@@ -300,6 +346,12 @@ if __name__ == "__main__":
             loss = loss_function(outputs[0][0], target)
 
             loss.backward()
+            # 在 train.py 的 optimizer.step() 之前加入
+            if epoch_id > 10:  # 假设 10 轮后解冻
+                for name, param in network.named_parameters():
+                    if "adfs_optimizer" in name and param.grad is not None:
+                        # 如果能打印出大于 0 的数值，说明 ADFS 正在学习
+                        print(f"ADFS Grad Norm: {param.grad.norm().item()}")
             optimizer.step()
 
             loss_item = loss.item()

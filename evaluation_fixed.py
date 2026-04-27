@@ -1,216 +1,262 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Dec 10 20:09:25 2020
+Modified for Mic8_2s_gpurir evaluation
+
 @author: admin
 """
 
+import os
+import fnmatch
+import argparse
 import numpy as np
+import pandas as pd
+import scipy.io as io
+import scipy.io.wavfile
 from pesq import pesq
 from pystoi.stoi import stoi
 from mir_eval.separation import bss_eval_sources
 
-import scipy.signal as signal
-import scipy.io.wavfile
-import os, fnmatch
-import pandas as pd
 
-import scipy.io as io
-import argparse
+def get_args():
+    parser = argparse.ArgumentParser("Evaluation for enhanced wavs")
+    parser.add_argument('--dataset_root', type=str,
+                        default='/data/lizhe/SH_data/Mic8_2s_gpurir',
+                        help='dataset root path')
+    parser.add_argument('--prediction_path', type=str,
+                        required=True,
+                        help='directory of enhanced wav files')
+    parser.add_argument('--test_name', type=str,
+                        default='mic_8',
+                        help='test set name, e.g. mic_8 / mic_4 / mic_12 / mic_16')
+    parser.add_argument('--save_dir', type=str,
+                        default='',
+                        help='directory to save metrics; default: prediction_path/results')
+    parser.add_argument('--ref_channel', type=int,
+                        default=0,
+                        help='reference channel index when wav is multi-channel')
+    return parser.parse_args()
 
-parser = argparse.ArgumentParser("NBDF base")
-parser.add_argument('--prediction_path', type=str,
-                    default='/data/lizhe/SH_data/Mic8_2s_gpurir/predictions_tfg_serial_test_mic_8',
-                    help='enhanced wav dir')
-
-args = parser.parse_args()
 
 
-def SDR(reference, estimation, sr=16000):
+def SDR(reference, estimation):
     sdr, _, _, _ = bss_eval_sources(reference[None, :], estimation[None, :])
-    return sdr
+    return float(sdr[0])
 
 
-def SI_SDR(reference, estimation, sr=16000):
+def SI_SDR(reference, estimation):
     """
     Scale-Invariant Signal-to-Distortion Ratio (SI-SDR)
     Args:
-        reference: numpy.ndarray, [..., T]
-        estimation: numpy.ndarray, [..., T]
+        reference: numpy.ndarray, [T]
+        estimation: numpy.ndarray, [T]
     Returns:
-        SI-SDR
-    [1] SDR– Half- Baked or Well Done?
-    http://www.merl.com/publications/docs/TR2019-013.pdf
+        float
     """
-
     estimation, reference = np.broadcast_arrays(estimation, reference)
     reference_energy = np.sum(reference ** 2, axis=-1, keepdims=True)
 
-    # # This is $\alpha$ after Equation (3) in [1].
-    optimal_scaling = np.sum(reference * estimation, axis=-1, keepdims=True) / reference_energy
+    if np.all(reference_energy == 0):
+        return -np.inf
 
-    # # This is $e_{\text{target}}$ in Equation (4) in [1].
+    optimal_scaling = np.sum(reference * estimation, axis=-1, keepdims=True) / (reference_energy + 1e-8)
     projection = optimal_scaling * reference
-
-    # # This is $e_{\text{res}}$ in Equation (4) in [1].
     noise = estimation - projection
 
-    ratio = np.sum(projection ** 2, axis=-1) / np.sum(noise ** 2, axis=-1)
-    return 10 * np.log10(ratio)
+    denom = np.sum(noise ** 2, axis=-1) + 1e-8
+    ratio = np.sum(projection ** 2, axis=-1) / denom
+    return float(10 * np.log10(ratio + 1e-8))
 
 
 def STOI(ref, est, sr=16000):
-    return stoi(ref, est, sr, extended=False)
+    return float(stoi(ref, est, sr, extended=False))
 
 
 def WB_PESQ(ref, est, sr=16000):
-    return pesq(sr, ref, est, "wb")
+    return float(pesq(sr, ref, est, "wb"))
 
 
 def NB_PESQ(ref, est, sr=16000):
-    # return nb_pesq(ref, est, sr)
-    return pesq(sr, ref, est, "nb")
+    return float(pesq(sr, ref, est, "nb"))
+
+
+def read_wav(path, ref_channel=0):
+    sr, data = scipy.io.wavfile.read(path)
+
+    if len(data.shape) != 1:
+        data = data[:, ref_channel]
+
+    data = np.asarray(data, dtype=np.float32)
+    return sr, data
+
+
+def align_length(*signals):
+    min_len = min(len(x) for x in signals)
+    return [x[:min_len] for x in signals]
+
+
+def safe_metric_compute(clean, mix, est, sr=16000):
+    results = {}
+
+    # mixed vs clean
+    results['pesq_mix'] = NB_PESQ(clean, mix, sr)
+    results['stoi_mix'] = STOI(clean, mix, sr)
+    results['sdr_mix'] = SDR(clean, mix)
+    results['si_sdr_mix'] = SI_SDR(clean, mix)
+
+    # enhanced vs clean
+    results['pesq_est'] = NB_PESQ(clean, est, sr)
+    results['stoi_est'] = STOI(clean, est, sr)
+    results['sdr_est'] = SDR(clean, est)
+    results['si_sdr_est'] = SI_SDR(clean, est)
+
+    return results
 
 
 if __name__ == "__main__":
+    args = get_args()
+    dataset_root = args.dataset_root
+    prediction_path = args.prediction_path
+    test_name = args.test_name
+    ref_channel = args.ref_channel
 
-    array_shapes = ['2ch-cir', '2ch-line', '4ch-cir', '4ch-line', '6ch-cir', '6ch-line']
-    noise_type = ['mix']
+    mix_dir = os.path.join(dataset_root, 'generated_data', f'test_{test_name}', 'mix')
+    ref_dir = os.path.join(dataset_root, 'generated_data', f'test_{test_name}', 'noreverb_ref')
+    wav_scp = os.path.join(dataset_root, 'loader_txt', 'wav_scp', f'wav_scp_test_{test_name}.txt')
 
-    ref_channel = 0
+    if args.save_dir.strip() == '':
+        save_dir = os.path.join(prediction_path, 'results')
+    else:
+        save_dir = args.save_dir
 
-    a = noise_type.copy()
-    a.append("mean")
+    os.makedirs(save_dir, exist_ok=True)
 
-    for Dataset in [
-        '/data/lizhe/SH_data/Mic8_2s_gpurir/']:
+    print("========== Evaluation Config ==========")
+    print("dataset_root   :", dataset_root)
+    print("prediction_path:", prediction_path)
+    print("test_name      :", test_name)
+    print("mix_dir        :", mix_dir)
+    print("ref_dir        :", ref_dir)
+    print("wav_scp        :", wav_scp)
+    print("save_dir       :", save_dir)
+    print("ref_channel    :", ref_channel)
+    print("=======================================")
 
-        datapath = "{}/".format(Dataset)
+    if not os.path.isdir(prediction_path):
+        raise FileNotFoundError(f"prediction_path not found: {prediction_path}")
+    if not os.path.isdir(mix_dir):
+        raise FileNotFoundError(f"mix_dir not found: {mix_dir}")
+    if not os.path.isdir(ref_dir):
+        raise FileNotFoundError(f"ref_dir not found: {ref_dir}")
+    if not os.path.isfile(wav_scp):
+        raise FileNotFoundError(f"wav_scp not found: {wav_scp}")
 
-        folder = args.prediction_path
+    records = []
 
-        PESQ_total = np.zeros((2 * len(array_shapes),))
-        STOI_total = np.zeros((2 * len(array_shapes),))
-        SDR_total = np.zeros((2 * len(array_shapes),))
-        SI_SDR_total = np.zeros((2 * len(array_shapes),))
+    with open(wav_scp, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
 
-        predpath = datapath + "predictions_baseline_cc/{}/".format(folder)
+    print(f"Total utterances in wav_scp: {len(lines)}")
 
-        respath = predpath + '/results/'
-        if not os.path.isdir(respath):
-            os.makedirs(respath)
+    for idx, line in enumerate(lines):
+        utt_id = line.strip().split('/')[-1]
+        if not utt_id.endswith('.wav'):
+            utt_id_wav = utt_id + '.wav'
+        else:
+            utt_id_wav = utt_id
 
-        for array_id, array in enumerate(array_shapes):
+        mix_path = os.path.join(mix_dir, utt_id_wav)
+        ref_path = os.path.join(ref_dir, utt_id_wav)
+        est_path = os.path.join(prediction_path, utt_id_wav)
 
-            PESQ_mat = np.zeros((len(noise_type), 1 + 1))
-            STOI_mat = np.zeros((len(noise_type), 1 + 1))
-            SDR_mat = np.zeros((len(noise_type), 1 + 1))
-            SI_SDR_mat = np.zeros((len(noise_type), 1 + 1))
+        if not os.path.isfile(mix_path):
+            print(f"[Skip] mix not found: {mix_path}")
+            continue
+        if not os.path.isfile(ref_path):
+            print(f"[Skip] ref not found: {ref_path}")
+            continue
+        if not os.path.isfile(est_path):
+            print(f"[Skip] est not found: {est_path}")
+            continue
 
-            unprocessed_dir = datapath + "test_mixed_wav_fixed/"
+        try:
+            sr_s, s = read_wav(ref_path, ref_channel=ref_channel)
+            sr_y, y = read_wav(mix_path, ref_channel=ref_channel)
+            sr_x, x = read_wav(est_path, ref_channel=0)
 
-            for i, noise in enumerate(noise_type):
-                mixedpath = datapath + "test_mixed_wav_fixed/{}/{}/".format(array, noise)
+            if not (sr_s == sr_y == sr_x == 16000):
+                print(f"[Warn] sample rate mismatch for {utt_id_wav}: ref={sr_s}, mix={sr_y}, est={sr_x}")
 
-                files = fnmatch.filter(os.listdir(mixedpath), '*_cln.wav')
-                nfiles = len(files)
+            s, y, x = align_length(s, y, x)
 
-                print("Processing\t" + noise + "\t0 " + str(nfiles) + "\t utterences ... \n")
+            metrics = safe_metric_compute(s, y, x, sr=16000)
+            metrics['utt_id'] = utt_id_wav
+            records.append(metrics)
 
-                for file in files:
+            if (idx + 1) % 50 == 0:
+                print(f"Processed {idx + 1}/{len(lines)}")
 
-                    spath = mixedpath + file
-                    ypath = mixedpath + file[:-8] + "_ms.wav"
-                    xpath = predpath + array + '/' + noise + '/' + file[:-8] + ".wav"
+        except Exception as e:
+            print(f"[Error] utt_id: {utt_id_wav}")
+            print(f"        mix_path: {mix_path}")
+            print(f"        ref_path: {ref_path}")
+            print(f"        est_path: {est_path}")
+            print(f"        info: {e}")
+            continue
 
-                    _, s = scipy.io.wavfile.read(spath)
+    if len(records) == 0:
+        raise RuntimeError("No valid utterances were evaluated. Please check prediction_path and file names.")
 
-                    if len(s.shape) != 1:
-                        s = s[:, ref_channel]
+    df_detail = pd.DataFrame(records)
 
-                    _, y = scipy.io.wavfile.read(ypath)
-                    y = y[:, ref_channel]
+    summary = {
+        'pesq_mix': df_detail['pesq_mix'].mean(),
+        'pesq_est': df_detail['pesq_est'].mean(),
+        'stoi_mix': df_detail['stoi_mix'].mean(),
+        'stoi_est': df_detail['stoi_est'].mean(),
+        'sdr_mix': df_detail['sdr_mix'].mean(),
+        'sdr_est': df_detail['sdr_est'].mean(),
+        'si_sdr_mix': df_detail['si_sdr_mix'].mean(),
+        'si_sdr_est': df_detail['si_sdr_est'].mean(),
+    }
 
-                    _, x = scipy.io.wavfile.read(xpath)
+    print("\n========== Final Average Results ==========")
+    print(f"PESQ  mix: {summary['pesq_mix']:.6f}")
+    print(f"PESQ  est: {summary['pesq_est']:.6f}")
+    print(f"STOI  mix: {summary['stoi_mix']:.6f}")
+    print(f"STOI  est: {summary['stoi_est']:.6f}")
+    print(f"SDR   mix: {summary['sdr_mix']:.6f}")
+    print(f"SDR   est: {summary['sdr_est']:.6f}")
+    print(f"SI-SDR mix: {summary['si_sdr_mix']:.6f}")
+    print(f"SI-SDR est: {summary['si_sdr_est']:.6f}")
+    print("===========================================\n")
 
-                    sl = min(len(y), len(s), len(x))
+    # 保存逐条结果
+    detail_csv = os.path.join(save_dir, f'{test_name}_detail_metrics.csv')
+    df_detail.to_csv(detail_csv, index=False, encoding='utf-8-sig')
 
-                    s = s[:sl]
-                    y = y[:sl]
-                    x = x[:sl]
+    # 保存汇总结果
+    df_summary = pd.DataFrame([summary], index=[test_name])
+    summary_csv = os.path.join(save_dir, f'{test_name}_summary_metrics.csv')
+    df_summary.to_csv(summary_csv, encoding='utf-8-sig')
 
-                    s = np.float32(s)
-                    y = np.float32(y)
-                    x = np.float32(x)
+    # 保存 mat
+    mat_path = os.path.join(save_dir, f'{test_name}_metrics.mat')
+    io.savemat(
+        mat_path,
+        {
+            'pesq_mix': np.array([summary['pesq_mix']], dtype=np.float32),
+            'pesq_est': np.array([summary['pesq_est']], dtype=np.float32),
+            'stoi_mix': np.array([summary['stoi_mix']], dtype=np.float32),
+            'stoi_est': np.array([summary['stoi_est']], dtype=np.float32),
+            'sdr_mix': np.array([summary['sdr_mix']], dtype=np.float32),
+            'sdr_est': np.array([summary['sdr_est']], dtype=np.float32),
+            'si_sdr_mix': np.array([summary['si_sdr_mix']], dtype=np.float32),
+            'si_sdr_est': np.array([summary['si_sdr_est']], dtype=np.float32),
+        }
+    )
 
-                    pesqy = NB_PESQ(s, y)
-                    stoiy = STOI(s, y)
-                    si_sdry = SI_SDR(s, y)
-                    # si_sdry = SI_SDR(s,y)
-                    sdry = SDR(s, y)
-
-                    PESQ_mat[i, 0] += pesqy
-                    STOI_mat[i, 0] += stoiy
-                    SDR_mat[i, 0] += sdry
-                    SI_SDR_mat[i, 0] += si_sdry
-                    # si_sdr_list[i,0] += si_sdry;
-
-                    stoix = STOI(s, x)
-                    pesqx = NB_PESQ(s, x)
-                    si_sdrx = SI_SDR(s, x)
-                    sdrx = SDR(s, x)
-
-                    PESQ_mat[i, 1] += pesqx
-                    STOI_mat[i, 1] += stoix
-                    SDR_mat[i, 1] += sdrx
-                    SI_SDR_mat[i, 1] += si_sdrx
-
-                PESQ_mat[i, :] /= nfiles
-                STOI_mat[i, :] /= nfiles
-                SDR_mat[i, :] /= nfiles
-                SI_SDR_mat[i, :] /= nfiles
-
-            res1path = predpath + array + '/'
-            if not os.path.isdir(res1path):
-                os.makedirs(res1path)
-
-            # PESQ_mat = np.vstack((PESQ_mat,np.mean(PESQ_mat,axis=0)))
-
-            PESQ_np = np.zeros((2, 4))
-            STOI_np = np.zeros((2, 4))
-            SDR_np = np.zeros((2, 4))
-            SI_SDR_np = np.zeros((2, 4))
-
-            for q in range(2):
-                PESQ_np[q, 0:3] = PESQ_mat[:, q]
-                PESQ_np[q, 3] = np.mean(PESQ_np[q, 0:3])
-
-                STOI_np[q, 0:3] = STOI_mat[:, q]
-                STOI_np[q, 3] = np.mean(STOI_np[q, 0:3])
-
-                SDR_np[q, 0:3] = SDR_mat[:, q]
-                SDR_np[q, 3] = np.mean(SDR_np[q, 0:3])
-
-                SI_SDR_np[q, 0:3] = SI_SDR_mat[:, q]
-                SI_SDR_np[q, 3] = np.mean(SI_SDR_np[q, 0:3])
-
-            io.savemat(res1path + 'metrics.mat', {'PESQ': PESQ_np, 'STOI': STOI_np, 'SDR': SDR_np, 'SI_SDR': SI_SDR_np})
-
-            PESQ_total[array_id] = PESQ_np[0, -1]
-            PESQ_total[array_id + len(array_shapes)] = PESQ_np[1, -1]
-
-            STOI_total[array_id] = STOI_np[0, -1]
-            STOI_total[array_id + len(array_shapes)] = STOI_np[1, -1]
-
-            SDR_total[array_id] = SDR_np[0, -1]
-            SDR_total[array_id + len(array_shapes)] = SDR_np[1, -1]
-
-            SI_SDR_total[array_id] = SI_SDR_np[0, -1]
-            SI_SDR_total[array_id + len(array_shapes)] = SI_SDR_np[1, -1]
-
-        p_cols = array_shapes * 2
-        p_rows = ['PESQ', 'STOI', 'SDR', 'SI_SDR']
-
-        metrics = np.vstack((PESQ_total, STOI_total, SDR_total, SI_SDR_total))
-
-        df = pd.DataFrame(metrics, index=p_rows, columns=p_cols)
-        df.to_csv("{}/metrics.csv".format(respath), sep=',')
+    print("Saved files:")
+    print(detail_csv)
+    print(summary_csv)
+    print(mat_path)

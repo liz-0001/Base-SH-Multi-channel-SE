@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
 from torch.nn.parameter import Parameter
+# 引入adfs模块
+from networks.adfs_module import SHC_ADFS
 
 from espnet2.enh.decoder.stft_decoder import STFTDecoder
 from espnet2.enh.encoder.stft_encoder import STFTEncoder
@@ -96,6 +98,13 @@ class TFGridNetV2(AbsSeparator):
             nn.Conv2d(2 * n_imics, emb_dim, ks, padding=padding),
             nn.GroupNorm(1, emb_dim, eps=eps),
         )
+        # === 新增：初始化 ADFS 模块 ===
+        # n_imics 对应你的球谐通道数 (L+1)^2
+        # n_freqs 是由 n_fft // 2 + 1 计算得到的频率点数
+        self.adfs_optimizer = SHC_ADFS(
+            num_sh_channels=2 * n_imics, 
+            num_freq_bins=n_freqs
+        )
 
         self.blocks = nn.ModuleList([])
         for _ in range(n_layers):
@@ -150,6 +159,10 @@ class TFGridNetV2(AbsSeparator):
         batch = torch.cat((batch0.real, batch0.imag), dim=1)  # [B, 2*M, T, F]
         n_batch, _, n_frames, n_freqs = batch.shape
 
+        # === 新增：调用 ADFS 优化球谐/多通道特征 ===
+        # 传入 [B, 2*M, T, F]，得到优化后的特征和层权重
+        batch, layer_weights = self.adfs_optimizer(batch)
+        # =========================================
         batch = self.conv(batch)  # [B, -1, T, F]
 
         for ii in range(self.n_layers):
