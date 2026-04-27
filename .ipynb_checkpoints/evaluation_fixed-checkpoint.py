@@ -21,7 +21,7 @@ from mir_eval.separation import bss_eval_sources
 def get_args():
     parser = argparse.ArgumentParser("Evaluation for enhanced wavs")
     parser.add_argument('--dataset_root', type=str,
-                        default='/autodl-tmp/Mic8_2s_gpurir',
+                        default='/data/lizhe/SH_data/Mic8_2s_gpurir',
                         help='dataset root path')
     parser.add_argument('--prediction_path', type=str,
                         required=True,

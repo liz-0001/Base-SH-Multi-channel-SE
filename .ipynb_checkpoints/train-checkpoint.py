@@ -68,25 +68,25 @@ parser = argparse.ArgumentParser("TFGridNetV2 training")
 parser.add_argument(
     "--train_wav_scp",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt",
     help="训练集 wav_scp 列表"
 )
 parser.add_argument(
     "--train_mix_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/generated_data/train/mix",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/mix",
     help="训练集 mix 目录"
 )
 parser.add_argument(
     "--train_ref_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/generated_data/train/noreverb_ref",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/noreverb_ref",
     help="训练集参考干净语音目录"
 )
 parser.add_argument(
     "--train_mic_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
     help="训练集麦克风阵列信息目录"
 )
 
@@ -94,25 +94,25 @@ parser.add_argument(
 parser.add_argument(
     "--val_wav_scp",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt",
     help="验证集 wav_scp 列表"
 )
 parser.add_argument(
     "--val_mix_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/generated_data/val/mix",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/mix",
     help="验证集 mix 目录"
 )
 parser.add_argument(
     "--val_ref_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/generated_data/val/noreverb_ref",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/noreverb_ref",
     help="验证集参考干净语音目录"
 )
 parser.add_argument(
     "--val_mic_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
+    default="/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
     help="验证集麦克风阵列信息目录"
 )
 
@@ -437,7 +437,7 @@ if __name__ == "__main__":
         writer.add_scalars(
             "Epoch_Loss",
             {
-                "Train_Epoch": adepoch_train_loss,
+                "Train_Epoch": epoch_train_loss,
                 "Validation_Epoch": epoch_val_loss
             },
             epoch_id
