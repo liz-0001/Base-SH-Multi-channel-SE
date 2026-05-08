@@ -27,6 +27,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 from loader.IGCRN_dataloader import make_fix_loader
 from networks.tfgridnetv2 import TFGridNetV2
+# 地址复用 本地：/data/lizhe/SH_data 服务器：/autodl-tmp
+from pathlib import Path
+DATA_ROOT = Path("/autodl-tmp")
 
 warnings.filterwarnings("ignore")
 
@@ -68,25 +71,25 @@ parser = argparse.ArgumentParser("TFGridNetV2 training")
 parser.add_argument(
     "--train_wav_scp",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt",
+    default=DATA_ROOT / "Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt",
     help="训练集 wav_scp 列表"
 )
 parser.add_argument(
     "--train_mix_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/generated_data/train/mix",
+    default=DATA_ROOT / "Mic8_2s_gpurir/generated_data/train/mix",
     help="训练集 mix 目录"
 )
 parser.add_argument(
     "--train_ref_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/generated_data/train/noreverb_ref",
+    default=DATA_ROOT / "Mic8_2s_gpurir/generated_data/train/noreverb_ref",
     help="训练集参考干净语音目录"
 )
 parser.add_argument(
     "--train_mic_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
+    default=DATA_ROOT / "Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
     help="训练集麦克风阵列信息目录"
 )
 
@@ -94,25 +97,25 @@ parser.add_argument(
 parser.add_argument(
     "--val_wav_scp",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt",
+    default=DATA_ROOT / "Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt",
     help="验证集 wav_scp 列表"
 )
 parser.add_argument(
     "--val_mix_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/generated_data/val/mix",
+    default=DATA_ROOT / "Mic8_2s_gpurir/generated_data/val/mix",
     help="验证集 mix 目录"
 )
 parser.add_argument(
     "--val_ref_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/generated_data/val/noreverb_ref",
+    default=DATA_ROOT / "Mic8_2s_gpurir/generated_data/val/noreverb_ref",
     help="验证集参考干净语音目录"
 )
 parser.add_argument(
     "--val_mic_dir",
     type=str,
-    default="/autodl-tmp/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
+    default=DATA_ROOT / "Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
     help="验证集麦克风阵列信息目录"
 )
 
