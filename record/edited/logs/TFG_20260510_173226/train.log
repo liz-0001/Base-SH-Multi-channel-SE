@@ -1,0 +1,17 @@
+2026-05-10 17:32:26 | INFO | Log file: logs/TFG_20260510_173226/train.log
+2026-05-10 17:32:26 | INFO | Training start
+2026-05-10 17:32:26 | INFO | Using device: cuda
+2026-05-10 17:32:26 | INFO | Trainable parameters: 1,951,369
+2026-05-10 17:32:26 | INFO | Resume training from: ./model_test/network_epoch10.pth
+2026-05-10 17:32:27 | INFO | Successfully loaded backbone weights. New parameters (Alpha/ADFS) initialized from defaults.
+2026-05-10 17:32:27 | INFO | --- Running ADFS Integration Check ---
+2026-05-10 17:32:27 | INFO | Success: ADFS module found in the network.
+2026-05-10 17:32:27 | INFO | Param: adfs_optimizer.freq_net.0.weight | Requires_Grad: True
+2026-05-10 17:32:27 | INFO | Param: adfs_optimizer.freq_net.0.bias | Requires_Grad: True
+2026-05-10 17:32:27 | INFO | Param: adfs_optimizer.freq_net.2.weight | Requires_Grad: True
+2026-05-10 17:32:27 | INFO | Param: adfs_optimizer.freq_net.2.bias | Requires_Grad: True
+2026-05-10 17:32:27 | INFO | Param: adfs_optimizer.channel_gate.1.weight | Requires_Grad: True
+2026-05-10 17:32:27 | INFO | Param: adfs_optimizer.channel_gate.1.bias | Requires_Grad: True
+2026-05-10 17:32:27 | INFO | --- Check Done ---
+2026-05-10 17:32:27 | INFO | Stage 1: ADFS is frozen. Training backbone only.
+2026-05-10 17:32:27 | INFO | Epoch 1/100 | Train start | batches=5882

@@ -15,20 +15,26 @@ import time
 import random
 import argparse
 import warnings
-
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-
 import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
-
 from loader.IGCRN_dataloader import make_fix_loader
 from networks.tfgridnetv2 import TFGridNetV2
+# 地址复用 本地：/data/lizhe/SH_data 服务器：/autodl-tmp
+from pathlib import Path
+DATA_ROOT = Path("/root/autodl-tmp")
 
 warnings.filterwarnings("ignore")
+
+import sys
+import logging
+
+
+
 
 # =========================
 # 1. 固定随机种子，保证复现性
@@ -68,25 +74,25 @@ parser = argparse.ArgumentParser("TFGridNetV2 training")
 parser.add_argument(
     "--train_wav_scp",
     type=str,
-    default="/data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt",
+    default=DATA_ROOT / "Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt",
     help="训练集 wav_scp 列表"
 )
 parser.add_argument(
     "--train_mix_dir",
     type=str,
-    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/mix",
+    default=DATA_ROOT / "Mic8_2s_gpurir/generated_data/train/mix",
     help="训练集 mix 目录"
 )
 parser.add_argument(
     "--train_ref_dir",
     type=str,
-    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/noreverb_ref",
+    default=DATA_ROOT / "Mic8_2s_gpurir/generated_data/train/noreverb_ref",
     help="训练集参考干净语音目录"
 )
 parser.add_argument(
     "--train_mic_dir",
     type=str,
-    default="/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
+    default=DATA_ROOT / "Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
     help="训练集麦克风阵列信息目录"
 )
 
@@ -94,32 +100,32 @@ parser.add_argument(
 parser.add_argument(
     "--val_wav_scp",
     type=str,
-    default="/data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt",
+    default=DATA_ROOT / "Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt",
     help="验证集 wav_scp 列表"
 )
 parser.add_argument(
     "--val_mix_dir",
     type=str,
-    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/mix",
+    default=DATA_ROOT / "Mic8_2s_gpurir/generated_data/val/mix",
     help="验证集 mix 目录"
 )
 parser.add_argument(
     "--val_ref_dir",
     type=str,
-    default="/data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/noreverb_ref",
+    default=DATA_ROOT / "Mic8_2s_gpurir/generated_data/val/noreverb_ref",
     help="验证集参考干净语音目录"
 )
 parser.add_argument(
     "--val_mic_dir",
     type=str,
-    default="/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
+    default=DATA_ROOT / "Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC",
     help="验证集麦克风阵列信息目录"
 )
 
 # -------- 训练超参数 --------
 parser.add_argument("--gpuid", type=int, default=0, help="使用哪张 GPU")
 parser.add_argument("--num_epoch", type=int, default=100, help="训练轮数")
-parser.add_argument("--num_worker", type=int, default=4, help="DataLoader worker 数")
+parser.add_argument("--num_worker", type=int, default=0, help="DataLoader worker 数")
 parser.add_argument("--lr", type=float, default=1e-3, help="学习率")
 parser.add_argument("--batch_size", type=int, default=2, help="batch size")
 parser.add_argument("--fft_len", type=int, default=512)
@@ -145,10 +151,52 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NowTime = time.localtime()
 
 
+class TqdmLoggingHandler(logging.Handler):
+    """避免 logging 打乱 tqdm 进度条"""
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg)
+        except Exception:
+            self.handleError(record)
+
+
+def setup_logger(log_file):
+    logger = logging.getLogger("train_logger")
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    logger.propagate = False
+
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+
+    console_handler = TqdmLoggingHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    return logger
+
+
+logger = None
+
+
 def log_info(msg: str):
-    """统一日志输出格式"""
-    now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    print(f"[{now}] {msg}", flush=True)
+    """同时输出到终端和干净的 train.log"""
+    if logger is not None:
+        logger.info(msg)
+    else:
+        now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        print(f"[{now}] {msg}", flush=True)
+
 
 
 def count_parameters(network):
@@ -163,6 +211,16 @@ def check_path_exists(path_name, path_value):
 
 
 if __name__ == "__main__":
+    exp_name = time.strftime("TFG_%Y%m%d_%H%M%S", time.localtime())
+
+    log_dir = Path("logs") / exp_name
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    global_logger_file = log_dir / "train.log"
+    logger = setup_logger(global_logger_file)
+
+    log_info(f"Log file: {global_logger_file}")
+
     log_info("Training start")
     log_info(f"Using device: {device}")
 
@@ -226,8 +284,8 @@ if __name__ == "__main__":
     if resume:
         log_info(f"Resume training from: {args.resume_model}")
         state_dict = torch.load(args.resume_model, map_location=device)
-        network.load_state_dict(state_dict)
-
+        network.load_state_dict(state_dict, strict=False)
+        log_info("Successfully loaded backbone weights. New parameters (Alpha/ADFS) initialized from defaults.")
     network = network.to(device)
     # --- 在主循环开始前的临时测试代码 ---
     log_info("--- Running ADFS Integration Check ---")
@@ -270,6 +328,29 @@ if __name__ == "__main__":
     # =========================
     # 8. 开始训练
     # =========================
+    train_loader = make_fix_loader(
+        wav_scp=train_wav_scp,
+        mix_dir=train_mix_dir,
+        ref_dir=train_ref_dir,
+        mic_dir=train_mic_dir,
+        batch_size=batch_size,
+        repeat=repeat,
+        num_workers=num_worker,
+        chunk=chunk,
+        sample_rate=sample_rate,
+    )
+
+    val_loader = make_fix_loader(
+        wav_scp=val_wav_scp,
+        mix_dir=val_mix_dir,
+        ref_dir=val_ref_dir,
+        mic_dir=val_mic_dir,
+        batch_size=batch_size,
+        repeat=repeat,
+        num_workers=num_worker,
+        chunk=chunk,
+        sample_rate=sample_rate,
+    )
     for epoch in range(args.num_epoch):
         epoch_id = epoch + 1
         # === 新增：分阶段训练逻辑 ===
@@ -284,34 +365,28 @@ if __name__ == "__main__":
             set_trainable(network, module_name="adfs_optimizer", trainable=True)
             if epoch_id == 11:
                 log_info("Stage 2: ADFS is unfrozen. Training all modules.")
+                # 分组设置学习率
+                adfs_params = []
+                backbone_params = []
+                
+                # 处理 DataParallel 的情况
+                real_model = network.module if hasattr(network, 'module') else network
+                
+                for name, param in real_model.named_parameters():
+                    if "adfs_optimizer" in name or "adfs_alpha" in name:
+                        adfs_params.append(param)
+                    else:
+                        backbone_params.append(param)
+                
+                optimizer = optim.Adam([
+                    {'params': adfs_params, 'lr': 1e-2},    # ADFS 给大步长 (0.01)
+                    {'params': backbone_params, 'lr': args.lr} # 主干保持原速
+                ])
                 # 注意：如果解冻了新参数，有些情况下需要重新把新参数告知优化器
                 # 但如果你想简单处理，可以在这里重新定义一次 optimizer (可选)
                 # optimizer = optim.Adam(filter(lambda p: p.requires_grad, network.parameters()), lr=args.lr)
         # =========================
 
-        train_loader = make_fix_loader(
-            wav_scp=train_wav_scp,
-            mix_dir=train_mix_dir,
-            ref_dir=train_ref_dir,
-            mic_dir=train_mic_dir,
-            batch_size=batch_size,
-            repeat=repeat,
-            num_workers=num_worker,
-            chunk=chunk,
-            sample_rate=sample_rate,
-        )
-
-        val_loader = make_fix_loader(
-            wav_scp=val_wav_scp,
-            mix_dir=val_mix_dir,
-            ref_dir=val_ref_dir,
-            mic_dir=val_mic_dir,
-            batch_size=batch_size,
-            repeat=repeat,
-            num_workers=num_worker,
-            chunk=chunk,
-            sample_rate=sample_rate,
-        )
 
         # =========================
         # 8.1 训练阶段
@@ -328,7 +403,10 @@ if __name__ == "__main__":
             total=len(train_loader),
             desc=f"Train {epoch_id}/{args.num_epoch}",
             dynamic_ncols=True,
-            leave=True
+            leave=False,
+            mininterval=5,
+            file=sys.stderr,
+            disable=not sys.stderr.isatty()
         )
 
         for idx, egs in train_bar:
@@ -347,11 +425,14 @@ if __name__ == "__main__":
 
             loss.backward()
             # 在 train.py 的 optimizer.step() 之前加入
-            if epoch_id > 10:  # 假设 10 轮后解冻
-                for name, param in network.named_parameters():
-                    if "adfs_optimizer" in name and param.grad is not None:
-                        # 如果能打印出大于 0 的数值，说明 ADFS 正在学习
-                        print(f"ADFS Grad Norm: {param.grad.norm().item()}")
+            if epoch_id > 0:  # 假设 10 轮后解冻,若是继续训练需要修改解冻轮次
+                # 监控 ADFS 权重和梯度
+                real_model = network.module if hasattr(network, 'module') else network
+                if hasattr(real_model, 'adfs_alpha'):
+                    alpha_val = real_model.adfs_alpha.item()
+                    alpha_grad = real_model.adfs_alpha.grad.item() if real_model.adfs_alpha.grad is not None else 0
+                    if idx % 100 == 0:
+                        tqdm.write(f"Step {idx} | Alpha: {alpha_val:.4f} | Alpha_Grad: {alpha_grad:.6e}")
             optimizer.step()
 
             loss_item = loss.item()
@@ -368,8 +449,8 @@ if __name__ == "__main__":
                 )
 
             del stft_input, shc_input, target, ilens, outputs, loss
-            if device.type == "cuda":
-                torch.cuda.empty_cache()
+            #if device.type == "cuda":
+                #torch.cuda.empty_cache()
 
         epoch_train_loss = train_loss_sum / max(train_step_count, 1)
         loss_train_epoch.append(epoch_train_loss)
@@ -395,7 +476,10 @@ if __name__ == "__main__":
             total=len(val_loader),
             desc=f"Val   {epoch_id}/{args.num_epoch}",
             dynamic_ncols=True,
-            leave=True
+            leave=False,
+            mininterval=5,
+            file=sys.stderr,
+            disable=not sys.stderr.isatty()
         )
 
         with torch.no_grad():
@@ -422,8 +506,8 @@ if __name__ == "__main__":
                     )
 
                 del stft_input, shc_input, target, ilens, outputs, loss_val
-                if device.type == "cuda":
-                    torch.cuda.empty_cache()
+                #if device.type == "cuda":
+                    #torch.cuda.empty_cache()
 
         epoch_val_loss = val_loss_sum / max(val_step_count, 1)
         loss_val_epoch.append(epoch_val_loss)
@@ -493,8 +577,8 @@ if __name__ == "__main__":
         plt.close()
 
         gc.collect()
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
+        #if device.type == "cuda":
+            #torch.cuda.empty_cache()
 
     writer.close()
     log_info("Training finished.")

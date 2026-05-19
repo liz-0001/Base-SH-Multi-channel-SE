@@ -64,12 +64,12 @@ class TFGridNetV2(AbsSeparator):
     def __init__(
             self,
             input_dim,
-            n_srcs=1,#输出声源数
+            n_srcs=1,
             n_fft=128,
             stride=64,
             window="hann",
-            n_imics=8,#麦克风数
-            n_layers=6,#gradnet块数
+            n_imics=8,
+            n_layers=6,
             lstm_hidden_units=192,
             attn_n_head=4,
             attn_approx_qk_dim=512,
@@ -458,7 +458,7 @@ if __name__ == '__main__':
     from thop import profile, clever_format
     from torch.autograd import Variable
 
-    input_1 = Variable(torch.FloatTensor(torch.rand(2, 32000, 8)))
+    input_1 = Variable(torch.FloatTensor(torch.rand(2, 32000, 16)))
     input_2 = Variable(torch.randint(31999, 32001, (2,)))
 
     net = TFGridNetV2(input_dim=None,n_srcs=1,n_fft=512,stride=256,n_imics=16,n_layers=3,lstm_hidden_units=128,attn_approx_qk_dim=256,emb_dim=32)

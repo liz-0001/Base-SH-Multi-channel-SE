@@ -26,7 +26,7 @@ from loader.IGCRN_dataloader import make_fix_loader
 from networks.tfgridnetv2 import TFGridNetV2
 # 地址复用 本地：/data/lizhe/SH_data 服务器：/autodl-tmp
 from pathlib import Path
-DATA_ROOT = Path("/data/lizhe/SH_data")
+DATA_ROOT = Path("/root/autodl-tmp")
 
 warnings.filterwarnings("ignore")
 
@@ -284,8 +284,8 @@ if __name__ == "__main__":
     if resume:
         log_info(f"Resume training from: {args.resume_model}")
         state_dict = torch.load(args.resume_model, map_location=device)
-        network.load_state_dict(state_dict)
-
+        network.load_state_dict(state_dict, strict=False)
+        log_info("Successfully loaded backbone weights. New parameters (Alpha/ADFS) initialized from defaults.")
     network = network.to(device)
     # --- 在主循环开始前的临时测试代码 ---
     log_info("--- Running ADFS Integration Check ---")
@@ -365,10 +365,23 @@ if __name__ == "__main__":
             set_trainable(network, module_name="adfs_optimizer", trainable=True)
             if epoch_id == 11:
                 log_info("Stage 2: ADFS is unfrozen. Training all modules.")
-                optimizer = optim.Adam(
-                    filter(lambda p: p.requires_grad, network.parameters()), 
-                    lr=args.lr
-                )
+                # 分组设置学习率
+                adfs_params = []
+                backbone_params = []
+                
+                # 处理 DataParallel 的情况
+                real_model = network.module if hasattr(network, 'module') else network
+                
+                for name, param in real_model.named_parameters():
+                    if "adfs_optimizer" in name or "adfs_alpha" in name:
+                        adfs_params.append(param)
+                    else:
+                        backbone_params.append(param)
+                
+                optimizer = optim.Adam([
+                    {'params': adfs_params, 'lr': 1e-2},    # ADFS 给大步长 (0.01)
+                    {'params': backbone_params, 'lr': args.lr} # 主干保持原速
+                ])
                 # 注意：如果解冻了新参数，有些情况下需要重新把新参数告知优化器
                 # 但如果你想简单处理，可以在这里重新定义一次 optimizer (可选)
                 # optimizer = optim.Adam(filter(lambda p: p.requires_grad, network.parameters()), lr=args.lr)
@@ -412,11 +425,14 @@ if __name__ == "__main__":
 
             loss.backward()
             # 在 train.py 的 optimizer.step() 之前加入
-            if epoch_id > 10:  # 假设 10 轮后解冻
-                for name, param in network.named_parameters():
-                    if "adfs_optimizer" in name and param.grad is not None:
-                        # 如果能打印出大于 0 的数值，说明 ADFS 正在学习
-                        tqdm.write(f"Step {idx} - ADFS Grad Norm: {param.grad.norm().item():.6f}")
+            if epoch_id > 0:  # 假设 10 轮后解冻,若是继续训练需要修改解冻轮次
+                # 监控 ADFS 权重和梯度
+                real_model = network.module if hasattr(network, 'module') else network
+                if hasattr(real_model, 'adfs_alpha'):
+                    alpha_val = real_model.adfs_alpha.item()
+                    alpha_grad = real_model.adfs_alpha.grad.item() if real_model.adfs_alpha.grad is not None else 0
+                    if idx % 100 == 0:
+                        tqdm.write(f"Step {idx} | Alpha: {alpha_val:.4f} | Alpha_Grad: {alpha_grad:.6e}")
             optimizer.step()
 
             loss_item = loss.item()
@@ -433,8 +449,8 @@ if __name__ == "__main__":
                 )
 
             del stft_input, shc_input, target, ilens, outputs, loss
-            if device.type == "cuda":
-                torch.cuda.empty_cache()
+            #if device.type == "cuda":
+                #torch.cuda.empty_cache()
 
         epoch_train_loss = train_loss_sum / max(train_step_count, 1)
         loss_train_epoch.append(epoch_train_loss)
@@ -490,8 +506,8 @@ if __name__ == "__main__":
                     )
 
                 del stft_input, shc_input, target, ilens, outputs, loss_val
-                if device.type == "cuda":
-                    torch.cuda.empty_cache()
+                #if device.type == "cuda":
+                    #torch.cuda.empty_cache()
 
         epoch_val_loss = val_loss_sum / max(val_step_count, 1)
         loss_val_epoch.append(epoch_val_loss)
@@ -561,8 +577,8 @@ if __name__ == "__main__":
         plt.close()
 
         gc.collect()
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
+        #if device.type == "cuda":
+            #torch.cuda.empty_cache()
 
     writer.close()
     log_info("Training finished.")
