@@ -114,13 +114,13 @@ def wav_generator(mix_path, ref_path, mic_path):
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
-    modelpath = 'model_miso_new_data/'
+    modelpath = 'model_test/'
 
     # test_list = ['mic_8', 'mic_4', 'mic_12', 'mic_16']
     test_list = ['mic_8']
 
-    file_path = '/autodl-tmp/Mic8_2s_gpurir'
-    mic_path_root = '/autodl-tmp/Mic8_2s_gpurir/RIR/cir_uniform_8/test_rir'
+    file_path = '/data/lizhe/SH_data/Mic8_2s_gpurir'
+    mic_path_root = '/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/test_rir'
 
     for test_name in test_list:
         test_wav_scp = os.path.join(file_path, 'loader_txt', 'wav_scp', 'wav_scp_test_' + test_name + '.txt')
@@ -128,7 +128,7 @@ if __name__ == "__main__":
         ref_dir = os.path.join(file_path, 'generated_data', 'test_' + test_name, 'noreverb_ref')
         mic_dir = os.path.join(mic_path_root, test_name, 'MIC')
 
-        modelname = os.path.join(modelpath, 'network_epoch18.pth')
+        modelname = os.path.join(modelpath, 'model_best.pth')
 
         # 和 evaluation_fixed.py 的 prediction_path 保持一致
         pred_save_dir = os.path.join(file_path, 'predictions_tfg_serial_test_' + test_name)
@@ -168,7 +168,7 @@ if __name__ == "__main__":
                 new_state_dict[k] = v
         state_dict = new_state_dict
 
-        load_network.load_state_dict(state_dict)
+        load_network.load_state_dict(state_dict,strict=False)
         load_network = load_network.to(device)
 
         if torch.cuda.device_count() > 1:
@@ -234,7 +234,7 @@ if __name__ == "__main__":
             'stoi_est:' + str(stoi_est)
         )
 
-        res1path = os.path.join(modelpath, 'result_model_epoch18')
+        res1path = os.path.join(modelpath, 'result_model_best')
         if not os.path.isdir(res1path):
             os.makedirs(res1path)
 
