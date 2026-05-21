@@ -112,15 +112,33 @@ def wav_generator(mix_path, ref_path, mic_path):
 
 
 if __name__ == "__main__":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+    import argparse as _argparse
+    _parser = _argparse.ArgumentParser("TFG inference")
+    _parser.add_argument("--no_adfs", action="store_true", help="与训练一致：关闭 ADFS")
+    _parser.add_argument("--modelpath", type=str, default=None,
+                         help="默认: model_test/ 或 --no_adfs 时用 model_test_noadfs/")
+    _parser.add_argument("--model_name", type=str, default="model_best.pth")
+    _parser.add_argument("--file_path", type=str, default="/data/lizhe/SH_data/Mic8_2s_gpurir")
+    _parser.add_argument("--mic_path_root", type=str,
+                         default="/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/test_rir")
+    _parser.add_argument("--mic_prefix", type=str, default="mic_array_pos")
+    _parser.add_argument("--gpus", type=str, default="0")
+    _inf_args = _parser.parse_args()
+    use_adfs = not _inf_args.no_adfs
 
-    modelpath = 'model_test/'
+    os.environ["CUDA_VISIBLE_DEVICES"] = _inf_args.gpus
+
+    if _inf_args.modelpath is not None:
+        modelpath = _inf_args.modelpath
+    else:
+        modelpath = "model_test/" if use_adfs else "model_test_noadfs/"
 
     # test_list = ['mic_8', 'mic_4', 'mic_12', 'mic_16']
     test_list = ['mic_8']
 
-    file_path = '/data/lizhe/SH_data/Mic8_2s_gpurir'
-    mic_path_root = '/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/test_rir'
+    file_path = _inf_args.file_path
+    mic_path_root = _inf_args.mic_path_root
+    mic_prefix = _inf_args.mic_prefix
 
     for test_name in test_list:
         test_wav_scp = os.path.join(file_path, 'loader_txt', 'wav_scp', 'wav_scp_test_' + test_name + '.txt')
@@ -128,7 +146,7 @@ if __name__ == "__main__":
         ref_dir = os.path.join(file_path, 'generated_data', 'test_' + test_name, 'noreverb_ref')
         mic_dir = os.path.join(mic_path_root, test_name, 'MIC')
 
-        modelname = os.path.join(modelpath, 'model_best.pth')
+        modelname = os.path.join(modelpath, _inf_args.model_name)
 
         # 和 evaluation_fixed.py 的 prediction_path 保持一致
         pred_save_dir = os.path.join(file_path, 'predictions_tfg_serial_test_' + test_name)
@@ -148,8 +166,10 @@ if __name__ == "__main__":
             n_layers=3,
             lstm_hidden_units=128,
             attn_approx_qk_dim=256,
-            emb_dim=32
+            emb_dim=32,
+            use_adfs=use_adfs,
         )
+        print(f"ADFS enabled: {use_adfs}")
 
         state_dict = torch.load(modelname, map_location='cpu')
 
@@ -195,7 +215,7 @@ if __name__ == "__main__":
                 ref_path = os.path.join(ref_dir, utt_id_wav)
 
                 mic_id = utt_id.split('#')[2].split('rir')[-1]
-                mic_path = os.path.join(mic_dir, 'mic' + mic_id + '.npy')
+                mic_path = os.path.join(mic_dir, mic_prefix + mic_id + '.npy')
 
                 try:
                     pesq_mix, pesq_est, stoi_mix, stoi_est, est = wav_generator(mix_path, ref_path, mic_path)

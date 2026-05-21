@@ -22,11 +22,13 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
-from loader.IGCRN_dataloader import make_fix_loader
+#数据
+#from loader.IGCRN_dataloader import make_fix_loader
+from loader.small_test import make_fix_loader
 from networks.tfgridnetv2 import TFGridNetV2
-# 地址复用 本地：/data/lizhe/SH_data 服务器：/autodl-tmp
+# 地址复用 本地：/data/lizhe/SH_data 服务器：/root/autodl-tmp
 from pathlib import Path
-DATA_ROOT = Path("/root/autodl-tmp")
+DATA_ROOT = Path("/data/lizhe/SH_data")
 
 warnings.filterwarnings("ignore")
 
@@ -140,8 +142,14 @@ parser.add_argument(
     default="model_test",
     help="继续训练时加载的模型路径"
 )
+parser.add_argument(
+    "--no_adfs",
+    action="store_true",
+    help="关闭 ADFS，仅训练 TFGridNet backbone（对应论文无 ADFS 基线）",
+)
 
 args = parser.parse_args()
+use_adfs = not args.no_adfs
 
 # =========================
 # 3. 设备设置
@@ -272,8 +280,10 @@ if __name__ == "__main__":
         n_layers=3,
         lstm_hidden_units=128,
         attn_approx_qk_dim=256,
-        emb_dim=32
+        emb_dim=32,
+        use_adfs=use_adfs,
     )
+    log_info(f"ADFS enabled: {use_adfs}")
 
     if torch.cuda.device_count() > 1 and device.type == "cuda":
         log_info(f"Use {torch.cuda.device_count()} GPUs for DataParallel")
@@ -290,16 +300,17 @@ if __name__ == "__main__":
     # --- 在主循环开始前的临时测试代码 ---
     log_info("--- Running ADFS Integration Check ---")
 
-    # 1. 检查 ADFS 是否在网络中
-    if hasattr(network, "adfs_optimizer") or (hasattr(network, "module") and hasattr(network.module, "adfs_optimizer")):
-        log_info("Success: ADFS module found in the network.")
+    real_net = network.module if hasattr(network, "module") else network
+    if use_adfs:
+        if getattr(real_net, "adfs_optimizer", None) is not None:
+            log_info("Success: ADFS module found in the network.")
+        else:
+            log_info("Error: ADFS module NOT found!")
+        for name, param in network.named_parameters():
+            if "adfs_optimizer" in name:
+                log_info(f"Param: {name} | Requires_Grad: {param.requires_grad}")
     else:
-        log_info("Error: ADFS module NOT found!")
-
-    # 2. 检查参数冻结状态 (假设现在是第 1 个 Epoch)
-    for name, param in network.named_parameters():
-        if "adfs_optimizer" in name:
-            log_info(f"Param: {name} | Requires_Grad: {param.requires_grad}")
+        log_info("ADFS disabled; backbone-only training.")
 
     log_info("--- Check Done ---")    
 
@@ -316,8 +327,9 @@ if __name__ == "__main__":
         "runs/Fine_tuning_{}/".format(time.strftime("%Y-%m-%d-%H-%M-%S", NowTime))
     )
 
-    modelpath = "model_test/"
+    modelpath = "model_test_noadfs/" if not use_adfs else "model_test/"
     os.makedirs(modelpath, exist_ok=True)
+    log_info(f"Model save dir: {modelpath}")
 
     loss_train_epoch = []
     loss_val_epoch = []
@@ -353,39 +365,27 @@ if __name__ == "__main__":
     )
     for epoch in range(args.num_epoch):
         epoch_id = epoch + 1
-        # === 新增：分阶段训练逻辑 ===
-        # 假设前 10 个 Epoch 冻结 ADFS，第 11 个 Epoch 开始解冻训练
-        if epoch_id <= 10:
-            # 冻结 ADFS
-            set_trainable(network, module_name="adfs_optimizer", trainable=False)
-            if epoch_id == 1:
-                log_info("Stage 1: ADFS is frozen. Training backbone only.")
-        else:
-            # 解冻 ADFS
-            set_trainable(network, module_name="adfs_optimizer", trainable=True)
-            if epoch_id == 11:
-                log_info("Stage 2: ADFS is unfrozen. Training all modules.")
-                # 分组设置学习率
-                adfs_params = []
-                backbone_params = []
-                
-                # 处理 DataParallel 的情况
-                real_model = network.module if hasattr(network, 'module') else network
-                
-                for name, param in real_model.named_parameters():
-                    if "adfs_optimizer" in name or "adfs_alpha" in name:
-                        adfs_params.append(param)
-                    else:
-                        backbone_params.append(param)
-                
-                optimizer = optim.Adam([
-                    {'params': adfs_params, 'lr': 1e-2},    # ADFS 给大步长 (0.01)
-                    {'params': backbone_params, 'lr': args.lr} # 主干保持原速
-                ])
-                # 注意：如果解冻了新参数，有些情况下需要重新把新参数告知优化器
-                # 但如果你想简单处理，可以在这里重新定义一次 optimizer (可选)
-                # optimizer = optim.Adam(filter(lambda p: p.requires_grad, network.parameters()), lr=args.lr)
-        # =========================
+        if use_adfs:
+            if epoch_id <= 10:
+                set_trainable(network, module_name="adfs_optimizer", trainable=False)
+                if epoch_id == 1:
+                    log_info("Stage 1: ADFS is frozen. Training backbone only.")
+            else:
+                set_trainable(network, module_name="adfs_optimizer", trainable=True)
+                if epoch_id == 11:
+                    log_info("Stage 2: ADFS is unfrozen. Training all modules.")
+                    adfs_params = []
+                    backbone_params = []
+                    real_model = network.module if hasattr(network, 'module') else network
+                    for name, param in real_model.named_parameters():
+                        if "adfs_optimizer" in name or "adfs_alpha" in name:
+                            adfs_params.append(param)
+                        else:
+                            backbone_params.append(param)
+                    optimizer = optim.Adam([
+                        {'params': adfs_params, 'lr': 1e-2},
+                        {'params': backbone_params, 'lr': args.lr}
+                    ])
 
 
         # =========================
@@ -425,10 +425,9 @@ if __name__ == "__main__":
 
             loss.backward()
             # 在 train.py 的 optimizer.step() 之前加入
-            if epoch_id > 0:  # 假设 10 轮后解冻,若是继续训练需要修改解冻轮次
-                # 监控 ADFS 权重和梯度
+            if use_adfs and epoch_id > 10:
                 real_model = network.module if hasattr(network, 'module') else network
-                if hasattr(real_model, 'adfs_alpha'):
+                if getattr(real_model, 'adfs_alpha', None) is not None:
                     alpha_val = real_model.adfs_alpha.item()
                     alpha_grad = real_model.adfs_alpha.grad.item() if real_model.adfs_alpha.grad is not None else 0
                     if idx % 100 == 0:

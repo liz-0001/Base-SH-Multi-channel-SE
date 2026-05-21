@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch.nn import init
 from torch.nn.parameter import Parameter
 # 引入adfs模块
-from adfs_module import SHC_ADFS
+from networks.adfs_module import SHC_ADFS
 
 from espnet2.enh.decoder.stft_decoder import STFTDecoder
 from espnet2.enh.encoder.stft_encoder import STFTEncoder
@@ -79,11 +79,13 @@ class TFGridNetV2(AbsSeparator):
             activation="prelu",
             eps=1.0e-5,
             use_builtin_complex=False,
+            use_adfs=True,
     ):
         super().__init__()
         self.n_srcs = n_srcs
         self.n_layers = n_layers
         self.n_imics = n_imics
+        self.use_adfs = use_adfs
         assert n_fft % 2 == 0
         n_freqs = n_fft // 2 + 1
 
@@ -98,15 +100,15 @@ class TFGridNetV2(AbsSeparator):
             nn.Conv2d(2 * n_imics, emb_dim, ks, padding=padding),
             nn.GroupNorm(1, emb_dim, eps=eps),
         )
-        # === 新增：初始化 ADFS 模块 ===
-        # n_imics 对应你的球谐通道数 (L+1)^2
-        # n_freqs 是由 n_fft // 2 + 1 计算得到的频率点数
-        self.adfs_optimizer = SHC_ADFS(
-            num_sh_channels=2 * n_imics, 
-            num_freq_bins=n_freqs
-        )
-        # 初始设为 0.1，让模型在训练初期既能接触 ADFS，又不至于被未训练的 ADFS 干扰
-        self.adfs_alpha = nn.Parameter(torch.tensor(0.1))
+        if self.use_adfs:
+            self.adfs_optimizer = SHC_ADFS(
+                num_sh_channels=2 * n_imics,
+                num_freq_bins=n_freqs
+            )
+            self.adfs_alpha = nn.Parameter(torch.tensor(0.1))
+        else:
+            self.adfs_optimizer = None
+            self.adfs_alpha = None
 
         self.blocks = nn.ModuleList([])
         for _ in range(n_layers):
@@ -161,16 +163,10 @@ class TFGridNetV2(AbsSeparator):
         batch = torch.cat((batch0.real, batch0.imag), dim=1)  # [B, 2*M, T, F]
         n_batch, _, n_frames, n_freqs = batch.shape
 
-        # === 新增：调用 ADFS 优化球谐/多通道特征 ===
-        # 传入 [B, 2*M, T, F]，得到优化后的特征和层权重
-        #batch, layer_weights = self.adfs_optimizer(batch)
-        # === 【核心修改】ADFS 残差集成 ===
-        identity = batch 
-        batch_adfs, layer_weights = self.adfs_optimizer(batch)
-        # 通过残差连接强迫梯度回传给 ADFS
-        batch = identity + self.adfs_alpha * batch_adfs 
-        # ================================
-        # =========================================
+        if self.use_adfs:
+            identity = batch
+            batch_adfs, _ = self.adfs_optimizer(batch)
+            batch = identity + self.adfs_alpha * batch_adfs
         batch = self.conv(batch)  # [B, -1, T, F]
 
         for ii in range(self.n_layers):

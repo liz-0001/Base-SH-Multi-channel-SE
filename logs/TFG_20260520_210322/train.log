@@ -1,0 +1,128 @@
+2026-05-20 21:03:22 | INFO | Log file: logs/TFG_20260520_210322/train.log
+2026-05-20 21:03:22 | INFO | Training start
+2026-05-20 21:03:22 | INFO | Using device: cuda
+2026-05-20 21:03:22 | INFO | Use 4 GPUs for DataParallel
+2026-05-20 21:03:22 | INFO | Trainable parameters: 1,951,369
+2026-05-20 21:03:22 | INFO | --- Running ADFS Integration Check ---
+2026-05-20 21:03:22 | INFO | Success: ADFS module found in the network.
+2026-05-20 21:03:22 | INFO | Param: module.adfs_optimizer.freq_net.0.weight | Requires_Grad: True
+2026-05-20 21:03:22 | INFO | Param: module.adfs_optimizer.freq_net.0.bias | Requires_Grad: True
+2026-05-20 21:03:22 | INFO | Param: module.adfs_optimizer.freq_net.2.weight | Requires_Grad: True
+2026-05-20 21:03:22 | INFO | Param: module.adfs_optimizer.freq_net.2.bias | Requires_Grad: True
+2026-05-20 21:03:22 | INFO | Param: module.adfs_optimizer.channel_gate.1.weight | Requires_Grad: True
+2026-05-20 21:03:22 | INFO | Param: module.adfs_optimizer.channel_gate.1.bias | Requires_Grad: True
+2026-05-20 21:03:22 | INFO | --- Check Done ---
+2026-05-20 21:03:23 | INFO | Stage 1: ADFS is frozen. Training backbone only.
+2026-05-20 21:03:23 | INFO | Epoch 1/100 | Train start | batches=589
+2026-05-20 21:27:13 | INFO | Epoch 1/100 | Train done | train_loss=0.001007 | time=23.84 min
+2026-05-20 21:27:13 | INFO | Epoch 1/100 | Val start   | batches=90
+2026-05-20 21:28:14 | INFO | Epoch 1/100 | Val done   | val_loss=0.000864 | time=1.01 min
+2026-05-20 21:28:14 | INFO | Epoch 1/100 | lr=0.00100000 | best_val=0.000864 | saved=model_best.pth
+2026-05-20 21:28:15 | INFO | Epoch 2/100 | Train start | batches=589
+2026-05-20 21:51:23 | INFO | Epoch 2/100 | Train done | train_loss=0.000734 | time=23.13 min
+2026-05-20 21:51:23 | INFO | Epoch 2/100 | Val start   | batches=90
+2026-05-20 21:52:15 | INFO | Epoch 2/100 | Val done   | val_loss=0.000803 | time=0.88 min
+2026-05-20 21:52:15 | INFO | Epoch 2/100 | lr=0.00100000 | best_val=0.000803 | saved=model_best.pth
+2026-05-20 21:52:16 | INFO | Epoch 3/100 | Train start | batches=589
+2026-05-20 22:15:10 | INFO | Epoch 3/100 | Train done | train_loss=0.000653 | time=22.90 min
+2026-05-20 22:15:10 | INFO | Epoch 3/100 | Val start   | batches=90
+2026-05-20 22:16:07 | INFO | Epoch 3/100 | Val done   | val_loss=0.000768 | time=0.95 min
+2026-05-20 22:16:07 | INFO | Epoch 3/100 | lr=0.00100000 | best_val=0.000768 | saved=model_best.pth
+2026-05-20 22:16:08 | INFO | Epoch 4/100 | Train start | batches=589
+2026-05-20 22:39:01 | INFO | Epoch 4/100 | Train done | train_loss=0.000591 | time=22.88 min
+2026-05-20 22:39:01 | INFO | Epoch 4/100 | Val start   | batches=90
+2026-05-20 22:39:54 | INFO | Epoch 4/100 | Val done   | val_loss=0.000769 | time=0.90 min
+2026-05-20 22:39:54 | INFO | Epoch 4/100 | val not improved | lr adjusted to 0.00050000 | no_impv=1
+2026-05-20 22:39:55 | INFO | Epoch 5/100 | Train start | batches=589
+2026-05-20 23:02:53 | INFO | Epoch 5/100 | Train done | train_loss=0.000520 | time=22.97 min
+2026-05-20 23:02:53 | INFO | Epoch 5/100 | Val start   | batches=90
+2026-05-20 23:03:48 | INFO | Epoch 5/100 | Val done   | val_loss=0.000754 | time=0.91 min
+2026-05-20 23:03:48 | INFO | Epoch 5/100 | lr=0.00050000 | best_val=0.000754 | saved=model_best.pth
+2026-05-20 23:03:49 | INFO | Epoch 6/100 | Train start | batches=589
+2026-05-20 23:26:46 | INFO | Epoch 6/100 | Train done | train_loss=0.000483 | time=22.96 min
+2026-05-20 23:26:46 | INFO | Epoch 6/100 | Val start   | batches=90
+2026-05-20 23:27:40 | INFO | Epoch 6/100 | Val done   | val_loss=0.000748 | time=0.89 min
+2026-05-20 23:27:40 | INFO | Epoch 6/100 | lr=0.00050000 | best_val=0.000748 | saved=model_best.pth
+2026-05-20 23:27:40 | INFO | Epoch 7/100 | Train start | batches=589
+2026-05-20 23:50:34 | INFO | Epoch 7/100 | Train done | train_loss=0.000457 | time=22.89 min
+2026-05-20 23:50:34 | INFO | Epoch 7/100 | Val start   | batches=90
+2026-05-20 23:51:28 | INFO | Epoch 7/100 | Val done   | val_loss=0.000737 | time=0.90 min
+2026-05-20 23:51:28 | INFO | Epoch 7/100 | lr=0.00050000 | best_val=0.000737 | saved=model_best.pth
+2026-05-20 23:51:28 | INFO | Epoch 8/100 | Train start | batches=589
+2026-05-21 00:14:28 | INFO | Epoch 8/100 | Train done | train_loss=0.000439 | time=22.98 min
+2026-05-21 00:14:28 | INFO | Epoch 8/100 | Val start   | batches=90
+2026-05-21 00:15:22 | INFO | Epoch 8/100 | Val done   | val_loss=0.000736 | time=0.91 min
+2026-05-21 00:15:22 | INFO | Epoch 8/100 | lr=0.00050000 | best_val=0.000736 | saved=model_best.pth
+2026-05-21 00:15:23 | INFO | Epoch 9/100 | Train start | batches=589
+2026-05-21 00:38:23 | INFO | Epoch 9/100 | Train done | train_loss=0.000418 | time=23.00 min
+2026-05-21 00:38:23 | INFO | Epoch 9/100 | Val start   | batches=90
+2026-05-21 00:39:17 | INFO | Epoch 9/100 | Val done   | val_loss=0.000745 | time=0.91 min
+2026-05-21 00:39:17 | INFO | Epoch 9/100 | val not improved | lr adjusted to 0.00025000 | no_impv=1
+2026-05-21 00:39:17 | INFO | Epoch 10/100 | Train start | batches=589
+2026-05-21 01:02:21 | INFO | Epoch 10/100 | Train done | train_loss=0.000387 | time=23.05 min
+2026-05-21 01:02:21 | INFO | Epoch 10/100 | Val start   | batches=90
+2026-05-21 01:03:16 | INFO | Epoch 10/100 | Val done   | val_loss=0.000720 | time=0.92 min
+2026-05-21 01:03:16 | INFO | Epoch 10/100 | lr=0.00025000 | best_val=0.000720 | saved=model_best.pth
+2026-05-21 01:03:17 | INFO | Stage 2: ADFS is unfrozen. Training all modules.
+2026-05-21 01:03:17 | INFO | Epoch 11/100 | Train start | batches=589
+2026-05-21 01:26:01 | INFO | Epoch 11/100 | Train done | train_loss=0.000432 | time=22.74 min
+2026-05-21 01:26:01 | INFO | Epoch 11/100 | Val start   | batches=90
+2026-05-21 01:26:55 | INFO | Epoch 11/100 | Val done   | val_loss=0.000764 | time=0.90 min
+2026-05-21 01:26:55 | INFO | Epoch 11/100 | val not improved | lr adjusted to 0.00500000 | no_impv=1
+2026-05-21 01:26:55 | INFO | Epoch 12/100 | Train start | batches=589
+2026-05-21 01:50:01 | INFO | Epoch 12/100 | Train done | train_loss=0.000410 | time=23.10 min
+2026-05-21 01:50:01 | INFO | Epoch 12/100 | Val start   | batches=90
+2026-05-21 01:50:56 | INFO | Epoch 12/100 | Val done   | val_loss=0.000702 | time=0.91 min
+2026-05-21 01:50:56 | INFO | Epoch 12/100 | lr=0.00500000 | best_val=0.000702 | saved=model_best.pth
+2026-05-21 01:50:56 | INFO | Epoch 13/100 | Train start | batches=589
+2026-05-21 02:14:04 | INFO | Epoch 13/100 | Train done | train_loss=0.000383 | time=23.13 min
+2026-05-21 02:14:04 | INFO | Epoch 13/100 | Val start   | batches=90
+2026-05-21 02:15:00 | INFO | Epoch 13/100 | Val done   | val_loss=0.000706 | time=0.93 min
+2026-05-21 02:15:00 | INFO | Epoch 13/100 | val not improved | lr adjusted to 0.00250000 | no_impv=1
+2026-05-21 02:15:00 | INFO | Epoch 14/100 | Train start | batches=589
+2026-05-21 02:37:59 | INFO | Epoch 14/100 | Train done | train_loss=0.000367 | time=22.97 min
+2026-05-21 02:37:59 | INFO | Epoch 14/100 | Val start   | batches=90
+2026-05-21 02:38:53 | INFO | Epoch 14/100 | Val done   | val_loss=0.000713 | time=0.91 min
+2026-05-21 02:38:53 | INFO | Epoch 14/100 | val not improved | lr adjusted to 0.00125000 | no_impv=2
+2026-05-21 02:38:54 | INFO | Epoch 15/100 | Train start | batches=589
+2026-05-21 03:02:05 | INFO | Epoch 15/100 | Train done | train_loss=0.000351 | time=23.20 min
+2026-05-21 03:02:05 | INFO | Epoch 15/100 | Val start   | batches=90
+2026-05-21 03:02:59 | INFO | Epoch 15/100 | Val done   | val_loss=0.000709 | time=0.89 min
+2026-05-21 03:02:59 | INFO | Epoch 15/100 | val not improved | lr adjusted to 0.00062500 | no_impv=3
+2026-05-21 03:02:59 | INFO | Epoch 16/100 | Train start | batches=589
+2026-05-21 03:26:02 | INFO | Epoch 16/100 | Train done | train_loss=0.000339 | time=23.04 min
+2026-05-21 03:26:02 | INFO | Epoch 16/100 | Val start   | batches=90
+2026-05-21 03:26:56 | INFO | Epoch 16/100 | Val done   | val_loss=0.000685 | time=0.91 min
+2026-05-21 03:26:56 | INFO | Epoch 16/100 | lr=0.00062500 | best_val=0.000685 | saved=model_best.pth
+2026-05-21 03:26:57 | INFO | Epoch 17/100 | Train start | batches=589
+2026-05-21 03:50:02 | INFO | Epoch 17/100 | Train done | train_loss=0.000313 | time=23.09 min
+2026-05-21 03:50:02 | INFO | Epoch 17/100 | Val start   | batches=90
+2026-05-21 03:50:58 | INFO | Epoch 17/100 | Val done   | val_loss=0.000684 | time=0.93 min
+2026-05-21 03:50:58 | INFO | Epoch 17/100 | lr=0.00062500 | best_val=0.000684 | saved=model_best.pth
+2026-05-21 03:50:58 | INFO | Epoch 18/100 | Train start | batches=589
+2026-05-21 04:13:43 | INFO | Epoch 18/100 | Train done | train_loss=0.000299 | time=22.74 min
+2026-05-21 04:13:43 | INFO | Epoch 18/100 | Val start   | batches=90
+2026-05-21 04:14:37 | INFO | Epoch 18/100 | Val done   | val_loss=0.000686 | time=0.90 min
+2026-05-21 04:14:37 | INFO | Epoch 18/100 | val not improved | lr adjusted to 0.00031250 | no_impv=1
+2026-05-21 04:14:37 | INFO | Epoch 19/100 | Train start | batches=589
+2026-05-21 04:37:52 | INFO | Epoch 19/100 | Train done | train_loss=0.000292 | time=23.25 min
+2026-05-21 04:37:52 | INFO | Epoch 19/100 | Val start   | batches=90
+2026-05-21 04:38:47 | INFO | Epoch 19/100 | Val done   | val_loss=0.000708 | time=0.92 min
+2026-05-21 04:38:47 | INFO | Epoch 19/100 | val not improved | lr adjusted to 0.00015625 | no_impv=2
+2026-05-21 04:38:48 | INFO | Epoch 20/100 | Train start | batches=589
+2026-05-21 05:01:34 | INFO | Epoch 20/100 | Train done | train_loss=0.000286 | time=22.76 min
+2026-05-21 05:01:34 | INFO | Epoch 20/100 | Val start   | batches=90
+2026-05-21 05:02:26 | INFO | Epoch 20/100 | Val done   | val_loss=0.000746 | time=0.88 min
+2026-05-21 05:02:26 | INFO | Epoch 20/100 | val not improved | lr adjusted to 0.00007813 | no_impv=3
+2026-05-21 05:02:27 | INFO | Epoch 21/100 | Train start | batches=589
+2026-05-21 05:25:36 | INFO | Epoch 21/100 | Train done | train_loss=0.000288 | time=23.15 min
+2026-05-21 05:25:36 | INFO | Epoch 21/100 | Val start   | batches=90
+2026-05-21 05:26:30 | INFO | Epoch 21/100 | Val done   | val_loss=0.000731 | time=0.89 min
+2026-05-21 05:26:30 | INFO | Epoch 21/100 | val not improved | lr adjusted to 0.00003906 | no_impv=4
+2026-05-21 05:26:30 | INFO | Epoch 22/100 | Train start | batches=589
+2026-05-21 05:49:25 | INFO | Epoch 22/100 | Train done | train_loss=0.000275 | time=22.91 min
+2026-05-21 05:49:25 | INFO | Epoch 22/100 | Val start   | batches=90
+2026-05-21 05:50:19 | INFO | Epoch 22/100 | Val done   | val_loss=0.000696 | time=0.90 min
+2026-05-21 05:50:19 | INFO | Epoch 22/100 | val not improved | lr adjusted to 0.00001953 | no_impv=5
+2026-05-21 05:50:19 | INFO | No improvements for 5 epochs, early stopping.
+2026-05-21 05:50:19 | INFO | Training finished.
