@@ -1,0 +1,10 @@
+2026-05-22 10:10:21 | INFO | Log file: logs/TFG_20260522_101021/train.log
+2026-05-22 10:10:21 | INFO | Training start
+2026-05-22 10:10:21 | INFO | Using device: cpu
+2026-05-22 10:10:21 | INFO | ADFS enabled: False
+2026-05-22 10:10:21 | INFO | Trainable parameters: 1,915,601
+2026-05-22 10:10:21 | INFO | --- Running ADFS Integration Check ---
+2026-05-22 10:10:21 | INFO | ADFS disabled; backbone-only training.
+2026-05-22 10:10:21 | INFO | --- Check Done ---
+2026-05-22 10:10:21 | INFO | Model save dir: model_test_noadfs/
+2026-05-22 10:10:21 | INFO | Epoch 1/100 | Train start | batches=471
