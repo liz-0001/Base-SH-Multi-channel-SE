@@ -1,0 +1,16 @@
+torch
+torchaudio
+numpy
+scipy
+pandas
+matplotlib
+tqdm
+librosa
+soundfile
+spaudiopy
+espnet
+pesq
+pystoi
+mir_eval
+tensorboard
+thop

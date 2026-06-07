@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS / editor
+.DS_Store
+.vscode/
+
+# Logs and TensorBoard
+logs/
+runs/
+*.log
+events.out.tfevents.*
+
+# Model checkpoints and experiment outputs
+model_test/
+model_test_noadfs/
+record/
+*.pth
+*.pt
+*.ckpt
+*.npy
+*.npz
+*.mat
+Network_loss.png
+
+# Generated audio and metrics
+predictions*/
+*_detail_metrics.csv
+*_summary_metrics.csv
+*.wav
+
+# Local data
+data/
+datasets/
