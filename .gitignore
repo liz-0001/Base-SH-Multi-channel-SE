@@ -16,9 +16,6 @@ __pycache__/
 .vscode/
 
 # Logs and TensorBoard
-logs/
-runs/
-*.log
 events.out.tfevents.*
 
 # Model checkpoints and experiment outputs

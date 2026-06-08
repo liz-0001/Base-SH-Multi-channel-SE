@@ -75,10 +75,11 @@ class FixDataset(Dataset):
         mix = audioread(mix_path)
         ref = audioread(ref_path)
 
-        mic_tag = utt_id.split('#')[2].split('rir')[-1]
+        mic_tag = utt_id.split('#')[2].split('rir', 1)[-1]
+        mic_tag = mic_tag.removesuffix('.wav').removesuffix('.npy')
         mic_file = os.path.join(
             self.mic_dir,
-            'mic_array_pos' + utt_id.split('#')[2].split('rir')[-1] + '.npy'
+            'mic_array_pos' + mic_tag + '.npy'
         )
 
 

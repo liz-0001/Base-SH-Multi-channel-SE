@@ -2,7 +2,7 @@
   --gpus 0,1,2,3 \
   --num_epoch 100 \
   --batch_size 8 \
-  --num_worker 4 \
+  --num_worker 8 \
   --lr 1e-3 \
   --model_dir model_tfg_serial_8mic 保存的文件
 autodl
