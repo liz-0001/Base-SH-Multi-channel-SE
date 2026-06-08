@@ -1,0 +1,23 @@
+训练指令：python -u train.py \
+  --gpus 0,1,2,3 \
+  --num_epoch 100 \
+  --batch_size 8 \
+  --num_worker 4 \
+  --lr 1e-3 \
+  --model_dir model_tfg_serial_8mic 保存的文件
+autodl
+python -u train.py \
+  --gpus 0,1,2,3 \
+  --train_wav_scp /root/autodl-tmp/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt \
+  --train_mix_dir /root/autodl-tmp/SH_data/Mic8_2s_gpurir/generated_data/train/mix \
+  --train_ref_dir /root/autodl-tmp/SH_data/Mic8_2s_gpurir/generated_data/train/noreverb_ref \
+  --train_mic_dir /root/autodl-tmp/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC \
+  --val_wav_scp /root/autodl-tmp/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt \
+  --val_mix_dir /root/autodl-tmp/SH_data/Mic8_2s_gpurir/generated_data/val/mix \
+  --val_ref_dir /root/autodl-tmp/SH_data/Mic8_2s_gpurir/generated_data/val/noreverb_ref \
+  --val_mic_dir /root/autodl-tmp/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC \
+  --num_epoch 100 \
+  --batch_size 8 \
+  --num_worker 4 \
+  --lr 1e-3 \
+  --model_dir model_tfg_serial_8mic

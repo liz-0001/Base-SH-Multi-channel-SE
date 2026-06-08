@@ -15,6 +15,8 @@ import time
 import random
 import argparse
 import warnings
+import csv
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -112,11 +114,19 @@ parser.add_argument(
 )
 
 # -------- 训练超参数 --------
-parser.add_argument("--gpuid", type=int, default=0, help="使用哪张 GPU")
+parser.add_argument("--gpuid", type=int, default=0, help="兼容旧参数；单卡时可用")
+parser.add_argument(
+    "--gpus",
+    type=str,
+    default="0,1,2,3",
+    help="可见 GPU 编号，例如 0 或 0,1,2,3；空字符串表示使用当前环境设置",
+)
 parser.add_argument("--num_epoch", type=int, default=100, help="训练轮数")
-parser.add_argument("--num_worker", type=int, default=0, help="DataLoader worker 数")
+parser.add_argument("--num_worker", type=int, default=4, help="DataLoader worker 数")
 parser.add_argument("--lr", type=float, default=1e-3, help="学习率")
-parser.add_argument("--batch_size", type=int, default=2, help="batch size")
+parser.add_argument("--batch_size", type=int, default=8, help="global batch size")
+parser.add_argument("--log_interval", type=int, default=20, help="进度条刷新 loss 的 step 间隔")
+parser.add_argument("--disable_tqdm", action="store_true", help="关闭控制台进度条")
 parser.add_argument("--fft_len", type=int, default=512)
 parser.add_argument("--channel", type=int, default=8)
 parser.add_argument("--repeat", type=int, default=1)
@@ -137,6 +147,9 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
+
+if args.gpus.strip():
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus.strip()
 
 # =========================
 # 3. 设备设置
@@ -205,6 +218,111 @@ def check_path_exists(path_name, path_value):
         raise FileNotFoundError(f"{path_name} 不存在: {path_value}")
 
 
+def log_training_config():
+    rows = [
+        ("CUDA_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "<not set>")),
+        ("cuda_available", str(torch.cuda.is_available())),
+        ("visible_gpu_count", str(torch.cuda.device_count())),
+        ("model", "TFGridNetV2 serial"),
+        ("mic", "8"),
+        ("sh_order", "4"),
+        ("sh_channels", "25"),
+        ("epochs", str(args.num_epoch)),
+        ("batch_size", str(args.batch_size)),
+        ("num_worker", str(args.num_worker)),
+        ("lr", str(args.lr)),
+        ("fft_len", str(args.fft_len)),
+        ("stride", "256"),
+        ("chunk_seconds", str(args.chunk)),
+        ("sample_rate", str(args.sample_rate)),
+        ("optimizer", "Adam"),
+        ("loss", "MSELoss"),
+        ("model_dir", str(args.model_dir)),
+    ]
+    log_info("========== Training Config ==========")
+    for key, value in rows:
+        log_info(f"{key:<22}: {value}")
+    if torch.cuda.is_available():
+        for gpu_idx in range(torch.cuda.device_count()):
+            props = torch.cuda.get_device_properties(gpu_idx)
+            mem_gb = props.total_memory / 1024 ** 3
+            log_info(f"{'gpu_' + str(gpu_idx):<22}: {props.name} | {mem_gb:.1f} GB")
+    log_info("---------- Data Paths ----------")
+    for key in [
+        "train_wav_scp",
+        "train_mix_dir",
+        "train_ref_dir",
+        "train_mic_dir",
+        "val_wav_scp",
+        "val_mix_dir",
+        "val_ref_dir",
+        "val_mic_dir",
+    ]:
+        log_info(f"{key:<22}: {getattr(args, key)}")
+    log_info("=====================================")
+
+
+def current_lr(optimizer):
+    return optimizer.param_groups[0]["lr"]
+
+
+def make_progress_bar(iterable, total, desc):
+    return tqdm(
+        iterable,
+        total=total,
+        desc=desc,
+        dynamic_ncols=True,
+        leave=True,
+        mininterval=1,
+        file=sys.stderr,
+        disable=args.disable_tqdm,
+    )
+
+
+def save_run_config(log_dir, modelpath):
+    config = {key: str(value) for key, value in vars(args).items()}
+    config.update(
+        {
+            "seed": SEED,
+            "device": str(device),
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+            "visible_gpu_count": torch.cuda.device_count(),
+            "model": "TFGridNetV2 serial",
+            "n_imics": 25,
+            "n_layers": 3,
+            "lstm_hidden_units": 128,
+            "attn_approx_qk_dim": 256,
+            "emb_dim": 32,
+            "optimizer": "Adam",
+            "loss": "MSELoss",
+        }
+    )
+    for out_dir in [log_dir, Path(modelpath)]:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        with open(out_dir / "run_config.json", "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+
+
+def append_epoch_metrics(csv_path, row):
+    is_new_file = not os.path.exists(csv_path)
+    fieldnames = [
+        "epoch",
+        "train_loss",
+        "val_loss",
+        "lr",
+        "best_val_loss",
+        "train_minutes",
+        "val_minutes",
+        "train_steps",
+        "val_steps",
+    ]
+    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+        writer_csv = csv.DictWriter(f, fieldnames=fieldnames)
+        if is_new_file:
+            writer_csv.writeheader()
+        writer_csv.writerow(row)
+
+
 if __name__ == "__main__":
     exp_name = time.strftime("TFG_%Y%m%d_%H%M%S", time.localtime())
 
@@ -218,6 +336,7 @@ if __name__ == "__main__":
 
     log_info("Training start")
     log_info(f"Using device: {device}")
+    log_training_config()
 
     # =========================
     # 4. 检查关键路径
@@ -300,6 +419,9 @@ if __name__ == "__main__":
     modelpath = args.model_dir
     os.makedirs(modelpath, exist_ok=True)
     log_info(f"Model save dir: {modelpath}")
+    save_run_config(log_dir, modelpath)
+    log_info(f"Run config saved to: {log_dir / 'run_config.json'}")
+    log_info(f"Run config saved to: {Path(modelpath) / 'run_config.json'}")
 
     loss_train_epoch = []
     loss_val_epoch = []
@@ -333,32 +455,35 @@ if __name__ == "__main__":
         chunk=chunk,
         sample_rate=sample_rate,
     )
+
+    log_info("========== Dataset Summary ==========")
+    log_info(f"train utterances={len(train_loader.dataset)} | train batches={len(train_loader)}")
+    log_info(f"val utterances={len(val_loader.dataset)} | val batches={len(val_loader)}")
+    log_info("=====================================")
+
     for epoch in range(args.num_epoch):
         epoch_id = epoch + 1
 
         # =========================
         # 8.1 训练阶段
         # =========================
-        log_info(f"Epoch {epoch_id}/{args.num_epoch} | Train start | batches={len(train_loader)}")
+        log_info(
+            f"Epoch {epoch_id}/{args.num_epoch} | Train start | "
+            f"batches={len(train_loader)} | lr={current_lr(optimizer):.8f}"
+        )
 
         network.train()
         train_loss_sum = 0.0
         train_step_count = 0
         train_start_time = time.time()
 
-        train_bar = tqdm(
+        train_bar = make_progress_bar(
             enumerate(train_loader),
             total=len(train_loader),
             desc=f"Train {epoch_id}/{args.num_epoch}",
-            dynamic_ncols=True,
-            leave=False,
-            mininterval=5,
-            file=sys.stderr,
-            disable=not sys.stderr.isatty()
         )
 
         for idx, egs in train_bar:
-            stft_input = egs["stft_input"][:, 0, :].unsqueeze(1).to(device, non_blocking=True)
             shc_input = egs["shc_input"].to(device, non_blocking=True)
             target = egs["target"][:, 0, :].to(device, non_blocking=True)
 
@@ -381,13 +506,14 @@ if __name__ == "__main__":
             writer.add_scalars("Loss", {"Train": loss_item}, iter_count)
             iter_count += 1
 
-            if idx % 100 == 0:
+            if idx % args.log_interval == 0 or idx == len(train_loader) - 1:
                 train_bar.set_postfix(
                     loss=f"{loss_item:.6f}",
-                    avg=f"{train_loss_sum / train_step_count:.6f}"
+                    avg=f"{train_loss_sum / train_step_count:.6f}",
+                    lr=f"{current_lr(optimizer):.2e}",
                 )
 
-            del stft_input, shc_input, target, ilens, outputs, loss
+            del shc_input, target, ilens, outputs, loss
             #if device.type == "cuda":
                 #torch.cuda.empty_cache()
 
@@ -397,7 +523,8 @@ if __name__ == "__main__":
 
         log_info(
             f"Epoch {epoch_id}/{args.num_epoch} | Train done | "
-            f"train_loss={epoch_train_loss:.6f} | time={train_time/60:.2f} min"
+            f"train_loss={epoch_train_loss:.6f} | time={train_time/60:.2f} min | "
+            f"steps={train_step_count}"
         )
 
         # =========================
@@ -410,20 +537,14 @@ if __name__ == "__main__":
         val_step_count = 0
         val_start_time = time.time()
 
-        val_bar = tqdm(
+        val_bar = make_progress_bar(
             enumerate(val_loader),
             total=len(val_loader),
             desc=f"Val   {epoch_id}/{args.num_epoch}",
-            dynamic_ncols=True,
-            leave=False,
-            mininterval=5,
-            file=sys.stderr,
-            disable=not sys.stderr.isatty()
         )
 
         with torch.no_grad():
             for idx, egs in val_bar:
-                stft_input = egs["stft_input"][:, 0, :].unsqueeze(1).to(device, non_blocking=True)
                 shc_input = egs["shc_input"].to(device, non_blocking=True)
                 target = egs["target"][:, 0, :].to(device, non_blocking=True)
 
@@ -438,13 +559,13 @@ if __name__ == "__main__":
                 val_loss_sum += loss_val_item
                 val_step_count += 1
 
-                if idx % 100 == 0:
+                if idx % args.log_interval == 0 or idx == len(val_loader) - 1:
                     val_bar.set_postfix(
                         loss=f"{loss_val_item:.6f}",
                         avg=f"{val_loss_sum / val_step_count:.6f}"
                     )
 
-                del stft_input, shc_input, target, ilens, outputs, loss_val
+                del shc_input, target, ilens, outputs, loss_val
                 #if device.type == "cuda":
                     #torch.cuda.empty_cache()
 
@@ -454,7 +575,8 @@ if __name__ == "__main__":
 
         log_info(
             f"Epoch {epoch_id}/{args.num_epoch} | Val done   | "
-            f"val_loss={epoch_val_loss:.6f} | time={val_time/60:.2f} min"
+            f"val_loss={epoch_val_loss:.6f} | time={val_time/60:.2f} min | "
+            f"steps={val_step_count}"
         )
 
         writer.add_scalars(
@@ -471,7 +593,8 @@ if __name__ == "__main__":
         # =========================
         torch.save(network.state_dict(), os.path.join(modelpath, f"network_epoch{epoch_id}.pth"))
 
-        current_lr = optimizer.param_groups[0]["lr"]
+        lr_before_update = current_lr(optimizer)
+        stop_training = False
 
         if epoch_val_loss <= min_val_loss:
             min_val_loss = epoch_val_loss
@@ -479,7 +602,7 @@ if __name__ == "__main__":
             torch.save(network.state_dict(), os.path.join(modelpath, "model_best.pth"))
             log_info(
                 f"Epoch {epoch_id}/{args.num_epoch} | "
-                f"lr={current_lr:.8f} | best_val={epoch_val_loss:.6f} | saved=model_best.pth"
+                f"lr={lr_before_update:.8f} | best_val={epoch_val_loss:.6f} | saved=model_best.pth"
             )
         else:
             val_no_impv += 1
@@ -496,7 +619,21 @@ if __name__ == "__main__":
 
             if val_no_impv >= 5:
                 log_info("No improvements for 5 epochs, early stopping.")
-                break
+                stop_training = True
+
+        metric_row = {
+            "epoch": epoch_id,
+            "train_loss": f"{epoch_train_loss:.8f}",
+            "val_loss": f"{epoch_val_loss:.8f}",
+            "lr": f"{lr_before_update:.10f}",
+            "best_val_loss": f"{min_val_loss:.8f}",
+            "train_minutes": f"{train_time / 60:.4f}",
+            "val_minutes": f"{val_time / 60:.4f}",
+            "train_steps": train_step_count,
+            "val_steps": val_step_count,
+        }
+        append_epoch_metrics(log_dir / "epoch_metrics.csv", metric_row)
+        append_epoch_metrics(Path(modelpath) / "epoch_metrics.csv", metric_row)
 
         # =========================
         # 8.4 保存 loss 曲线
@@ -504,12 +641,14 @@ if __name__ == "__main__":
         np.save(os.path.join(modelpath, "loss_val_epoch.npy"), loss_val_epoch)
         np.save(os.path.join(modelpath, "loss_train_epoch.npy"), loss_train_epoch)
 
-        plt.figure(figsize=(8, 6))
-        plt.title("MSE Loss Curve")
+        epochs_axis = np.arange(1, len(loss_train_epoch) + 1)
+        plt.figure(figsize=(9, 6))
+        plt.title("TFG-serial 8Mic Training Curve")
         plt.xlabel("Epoch")
         plt.ylabel("MSE Loss")
-        plt.plot(loss_train_epoch, label="train_loss")
-        plt.plot(loss_val_epoch, label="val_loss")
+        plt.plot(epochs_axis, loss_train_epoch, marker="o", linewidth=2, label="train")
+        plt.plot(epochs_axis, loss_val_epoch, marker="o", linewidth=2, label="val")
+        plt.grid(True, linestyle="--", alpha=0.35)
         plt.legend()
         plt.tight_layout()
         plt.savefig(os.path.join(modelpath, "Network_loss.png"))
@@ -518,6 +657,9 @@ if __name__ == "__main__":
         gc.collect()
         #if device.type == "cuda":
             #torch.cuda.empty_cache()
+
+        if stop_training:
+            break
 
     writer.close()
     log_info("Training finished.")
