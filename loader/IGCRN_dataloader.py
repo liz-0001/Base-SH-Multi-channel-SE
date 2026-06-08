@@ -19,7 +19,7 @@ import multiprocessing as mp
 eps = np.finfo(np.float32).eps
 ft_len = 512
 ft_overlap = 256
-channel = 16
+channel = 8
 
 
 def audioread(path, fs=16000):
@@ -27,7 +27,7 @@ def audioread(path, fs=16000):
     if sr != fs:
         if len(wave_data.shape) != 1:
             wave_data = wave_data.transpose((1, 0))
-        wave_data = librosa.resample(wave_data, sr, fs)
+        wave_data = librosa.resample(wave_data, orig_sr=sr, target_sr=fs)
         if len(wave_data.shape) != 1:
             wave_data = wave_data.transpose((1, 0))
     return wave_data
@@ -105,7 +105,7 @@ class FixDataset(Dataset):
     def cart2sph(self, x, y, z):
         r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
         theta = np.arctan2(y, x)
-        phi = np.arccos(z / r)
+        phi = np.arccos(z / (r + 1e-8))
         return r, theta, phi
 
     def microphone_positions_spherical(self, cartesian_positions):

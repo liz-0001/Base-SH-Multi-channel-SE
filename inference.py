@@ -17,11 +17,8 @@ import soundfile as sf
 from scipy import signal, io
 from tqdm import tqdm
 from evaluation_fixed import NB_PESQ, STOI
-from networks.IGCRN import IGCRN
 import warnings
 from multiprocessing import Pool
-from config.train_config import *
-from networks.enhancer import PonderEnhancer
 from networks.tfgridnetv2 import TFGridNetV2
 
 warnings.filterwarnings("ignore")
@@ -114,27 +111,23 @@ def wav_generator(mix_path, ref_path, mic_path):
 if __name__ == "__main__":
     import argparse as _argparse
     _parser = _argparse.ArgumentParser("TFG inference")
-    _parser.add_argument("--no_adfs", action="store_true", help="与训练一致：关闭 ADFS")
-    _parser.add_argument("--modelpath", type=str, default=None,
-                         help="默认: model_test/ 或 --no_adfs 时用 model_test_noadfs/")
+    _parser.add_argument("--modelpath", type=str, default="model_tfg_serial_8mic",
+                         help="模型目录，默认使用 8 麦串行 TFG baseline")
     _parser.add_argument("--model_name", type=str, default="model_best.pth")
     _parser.add_argument("--file_path", type=str, default="/data/lizhe/SH_data/Mic8_2s_gpurir")
     _parser.add_argument("--mic_path_root", type=str,
                          default="/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/test_rir")
     _parser.add_argument("--mic_prefix", type=str, default="mic_array_pos")
+    _parser.add_argument("--test_name", type=str, default="mic_8")
     _parser.add_argument("--gpus", type=str, default="0")
     _inf_args = _parser.parse_args()
-    use_adfs = not _inf_args.no_adfs
 
     os.environ["CUDA_VISIBLE_DEVICES"] = _inf_args.gpus
 
-    if _inf_args.modelpath is not None:
-        modelpath = _inf_args.modelpath
-    else:
-        modelpath = "model_test/" if use_adfs else "model_test_noadfs/"
+    modelpath = _inf_args.modelpath
 
     # test_list = ['mic_8', 'mic_4', 'mic_12', 'mic_16']
-    test_list = ['mic_8']
+    test_list = [_inf_args.test_name]
 
     file_path = _inf_args.file_path
     mic_path_root = _inf_args.mic_path_root
@@ -167,9 +160,8 @@ if __name__ == "__main__":
             lstm_hidden_units=128,
             attn_approx_qk_dim=256,
             emb_dim=32,
-            use_adfs=use_adfs,
         )
-        print(f"ADFS enabled: {use_adfs}")
+        print("Baseline model: TFGridNetV2 serial SHC input, no ADFS")
 
         state_dict = torch.load(modelname, map_location='cpu')
 

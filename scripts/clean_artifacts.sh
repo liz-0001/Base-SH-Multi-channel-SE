@@ -11,8 +11,7 @@ rm -rf \
   .ipynb_checkpoints \
   logs \
   runs \
-  model_test \
-  model_test_noadfs
+  model_tfg_serial_8mic
 
 find . -type d -name "__pycache__" -prune -exec rm -rf {} +
 find . -type d -name ".ipynb_checkpoints" -prune -exec rm -rf {} +

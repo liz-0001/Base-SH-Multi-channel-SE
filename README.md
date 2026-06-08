@@ -1,140 +1,345 @@
-# TFG
+# TFG 8Mic Baseline
 
-TFG is a multi-channel speech enhancement project based on TFGridNetV2 with an
-optional ADFS module for adaptive frequency and spherical-harmonic channel
-selection.
-
-The current training pipeline targets the `Mic8_2s_gpurir` dataset. Mixture
-signals are converted to spherical harmonic coefficients using microphone array
-geometry, then enhanced by TFGridNetV2. Evaluation reports PESQ, STOI, SDR, and
-SI-SDR.
+This branch is for reproducing the 8-microphone serial TFGridNet baseline from the
+SH-injection project. The model input is 4th-order real spherical harmonic
+coefficients generated from 8-channel microphone signals, so the network input
+dimension is 25.
 
 ## Project Structure
 
 ```text
 .
-+-- train.py                  # Training entry point
-+-- inference.py              # Inference and PESQ/STOI quick evaluation
-+-- evaluation_fixed.py       # Full metric evaluation for enhanced wavs
-+-- config/
-|   +-- train_config.py       # Legacy PonderEnhancer config
-+-- loader/
-|   +-- IGCRN_dataloader.py   # Full dataset loader
-|   +-- small_test.py         # Deterministic 10% subset loader
-+-- networks/
-|   +-- tfgridnetv2.py        # Main TFGridNetV2 model
-|   +-- adfs_module.py        # ADFS module
-|   +-- IGCRN.py              # Legacy/reference model
-|   +-- enhancer.py           # Legacy PonderEnhancer model
-+-- utils/                    # Loss, plotting, and ponder helpers
-+-- model_test/               # Local checkpoints and curves
-+-- logs/                     # Training logs
-+-- runs/                     # TensorBoard events
-+-- record/                   # Historical experiment records
+├── train.py
+├── inference.py
+├── evaluation_fixed.py
+├── requirements.txt
+├── loader/
+│   └── IGCRN_dataloader.py
+├── networks/
+│   └── tfgridnetv2.py
+├── third_party/
+│   └── SH_injection/SH_Generalization_num/
+│       └── Data_prepare/
+└── scripts/
+    ├── clean_artifacts.sh
+    └── untrack_artifacts.sh
 ```
 
-## Environment
+The current source tree keeps only code related to training, inference,
+evaluation, data loading, and 8Mic data preparation. Runtime
+outputs such as logs, TensorBoard events, checkpoints, caches, and old experiment
+records are intentionally not kept in the source tree.
 
-Python 3.8 or newer is recommended. The project uses PyTorch, ESPnet, and audio
-metric packages that are easier to install in a dedicated environment.
+## Baseline Dataset
 
-```bash
-conda create -n tfg python=3.9 -y
-conda activate tfg
-pip install -r requirements.txt
+The TFG-serial implementation and data preparation scripts used here come from
+the original repository's `SH_Generalization_num` directory because that is where
+the author provides the TFG serial code. This branch does not run the full
+microphone-number generalization experiment; it only reproduces the 8Mic
+TFG-serial PESQ/STOI setting.
+
+The paper/code baseline uses:
+
+- Clean/noise corpus: MS-SNSD split into train, validation, and test lists.
+- Room simulation: gpuRIR.
+- Microphone array: circular 8-microphone array.
+- Test condition used in this branch: `mic_8` only.
+- Sample rate: 16 kHz.
+- Segment length: 2 seconds in this branch.
+- SNR range in the data generation scripts: `[-10, 10]` dB.
+- RT60 range in the RIR scripts: roughly `[0.1, 1.0]` seconds from the current
+  author script implementation.
+- Room size in the author scripts: `[6, 5, 4]` meters.
+
+The generated dataset expected by this branch is named:
+
+```text
+Mic8_2s_gpurir
 ```
 
-Install the PyTorch build that matches your CUDA version if the default wheel is
-not suitable for your server.
-
-## Dataset Layout
-
-By default, scripts expect the dataset at:
+Default dataset root used by training/inference/evaluation:
 
 ```text
 /data/lizhe/SH_data/Mic8_2s_gpurir
 ```
 
-Expected subdirectories include:
+Change this path if your server stores the dataset elsewhere.
+
+## Expected Dataset Layout
 
 ```text
-loader_txt/wav_scp/
-generated_data/train/mix/
-generated_data/train/noreverb_ref/
-generated_data/val/mix/
-generated_data/val/noreverb_ref/
-generated_data/test_mic_8/mix/
-generated_data/test_mic_8/noreverb_ref/
-RIR/cir_uniform_8/train_val_rir/MIC/
-RIR/cir_uniform_8/test_rir/mic_8/MIC/
+/data/lizhe/SH_data/Mic8_2s_gpurir/
+├── loader_txt/
+│   ├── rir/
+│   │   ├── rir_train_val.txt
+│   │   ├── mic_train_val.txt
+│   │   ├── rir_test_mic_8.txt
+│   │   └── mic_test_mic_8.txt
+│   ├── wav_list/
+│   │   ├── train_clean_list.txt
+│   │   ├── train_noise_list.txt
+│   │   ├── val_clean_list.txt
+│   │   ├── val_noise_list.txt
+│   │   ├── test_clean_list.txt
+│   │   └── test_noise_list.txt
+│   └── wav_scp/
+│       ├── wav_scp_train.txt
+│       ├── wav_scp_val.txt
+│       └── wav_scp_test_mic_8.txt
+├── RIR/
+│   └── cir_uniform_8/
+│       ├── train_val_rir/
+│       │   ├── RIR/
+│       │   └── MIC/
+│       └── test_rir/
+│           └── mic_8/
+│               ├── RIR/
+│               └── MIC/
+└── generated_data/
+    ├── train/
+    │   ├── mix/
+    │   ├── reverb_ref/
+    │   └── noreverb_ref/
+    ├── val/
+    │   ├── mix/
+    │   ├── reverb_ref/
+    │   └── noreverb_ref/
+    └── test_mic_8/
+        ├── mix/
+        ├── reverb_ref/
+        └── noreverb_ref/
 ```
 
-You can override these paths with command-line arguments in `train.py`,
-`inference.py`, and `evaluation_fixed.py`.
+`wav_scp` entries must match generated wav names. The dataloader and inference
+code use the `rir` id embedded in each utterance name to find the corresponding
+microphone geometry file:
+
+```text
+RIR/cir_uniform_8/train_val_rir/MIC/mic_array_pos*.npy
+RIR/cir_uniform_8/test_rir/mic_8/MIC/mic_array_pos*.npy
+```
+
+## Data Preparation Scripts
+
+The data preparation scripts are kept as third-party reference code:
+
+```text
+third_party/SH_injection/SH_Generalization_num/Data_prepare/
+```
+
+For 8Mic reproduction, use these scripts:
+
+```text
+genRIR_train_val.py      # Generate train/validation 8Mic RIR and MIC geometry
+genRIR_test.py           # Generate test RIR/MIC geometry; keep only mic_8 if reproducing 8Mic
+gen_mix_train.py         # Generate train mix/reverb_ref/noreverb_ref and wav_scp_train.txt
+gen_mix_val.py           # Generate validation mix/reverb_ref/noreverb_ref and wav_scp_val.txt
+gen_mix_test_num8.py     # Generate 8Mic test mix/reverb_ref/noreverb_ref and wav_scp_test_mic_8.txt
+tools.py                 # Helper functions used by data generation scripts
+```
+
+### Paths To Modify Before Running
+
+The author scripts still contain hardcoded `/ddnstor/...` paths. Replace them
+with your actual dataset root before running.
+
+Use this root consistently:
+
+```text
+TODO_PATH_DATA_ROOT=/data/lizhe/SH_data/Mic8_2s_gpurir
+```
+
+In `genRIR_train_val.py`, modify:
+
+```python
+out_path = "TODO_PATH_DATA_ROOT/RIR/cir_uniform_8/train_val_rir/"
+txt_path = "TODO_PATH_DATA_ROOT/loader_txt/rir/"
+```
+
+In `genRIR_test.py`, modify the loop or hardcoded path so the 8Mic output is:
+
+```python
+out_path = "TODO_PATH_DATA_ROOT/RIR/cir_uniform_8/test_rir/mic_8/"
+txt_path = "TODO_PATH_DATA_ROOT/loader_txt/rir/"
+```
+
+If you only reproduce 8Mic, you can change the test microphone loop to:
+
+```python
+for num_mics in [8]:
+    ...
+```
+
+In `gen_mix_train.py`, modify:
+
+```python
+--clean_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/train_clean_list.txt
+--noise_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/train_noise_list.txt
+--rir_wav_list    TODO_PATH_DATA_ROOT/loader_txt/rir/rir_train_val.txt
+--config_path     TODO_PATH_DATA_ROOT/generated_data/train/mix_train.config
+--save_path       TODO_PATH_DATA_ROOT/generated_data/train
+```
+
+Also replace the hardcoded output path for:
+
+```text
+TODO_PATH_DATA_ROOT/loader_txt/wav_scp/wav_scp_train.txt
+```
+
+In `gen_mix_val.py`, modify:
+
+```python
+--clean_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/val_clean_list.txt
+--noise_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/val_noise_list.txt
+--rir_wav_list    TODO_PATH_DATA_ROOT/loader_txt/rir/rir_train_val.txt
+--config_path     TODO_PATH_DATA_ROOT/generated_data/val/mix_val.config
+--save_path       TODO_PATH_DATA_ROOT/generated_data/val
+```
+
+Also replace the hardcoded output path for:
+
+```text
+TODO_PATH_DATA_ROOT/loader_txt/wav_scp/wav_scp_val.txt
+```
+
+In `gen_mix_test_num8.py`, modify:
+
+```python
+--clean_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/test_clean_list.txt
+--noise_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/test_noise_list.txt
+--rir_wav_list    TODO_PATH_DATA_ROOT/loader_txt/rir/rir_test_mic_8.txt
+--config_path     TODO_PATH_DATA_ROOT/generated_data/test_mic_8/mix_test_mic_8.config
+--save_path       TODO_PATH_DATA_ROOT/generated_data/test_mic_8
+```
+
+Also replace the hardcoded output path for:
+
+```text
+TODO_PATH_DATA_ROOT/loader_txt/wav_scp/wav_scp_test_mic_8.txt
+```
+
+### Data Preparation Order
+
+1. Prepare MS-SNSD clean/noise wav lists.
+
+```bash
+mkdir -p /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list
+
+find TODO_PATH_MS_SNSD/clean_train -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/train_clean_list.txt
+find TODO_PATH_MS_SNSD/noise_train -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/train_noise_list.txt
+find TODO_PATH_MS_SNSD/clean_val -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/val_clean_list.txt
+find TODO_PATH_MS_SNSD/noise_val -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/val_noise_list.txt
+find TODO_PATH_MS_SNSD/clean_test -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/test_clean_list.txt
+find TODO_PATH_MS_SNSD/noise_test -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/test_noise_list.txt
+```
+
+2. Generate train/validation RIR and microphone geometry.
+
+```bash
+python third_party/SH_injection/SH_Generalization_num/Data_prepare/genRIR_train_val.py
+```
+
+3. Generate 8Mic test RIR and microphone geometry.
+
+```bash
+python third_party/SH_injection/SH_Generalization_num/Data_prepare/genRIR_test.py
+```
+
+4. Generate train mixtures.
+
+```bash
+python third_party/SH_injection/SH_Generalization_num/Data_prepare/gen_mix_train.py \
+  --chunk_len 2 \
+  --num_process 8
+```
+
+5. Generate validation mixtures.
+
+```bash
+python third_party/SH_injection/SH_Generalization_num/Data_prepare/gen_mix_val.py \
+  --chunk_len 2 \
+  --num_process 8
+```
+
+6. Generate 8Mic test mixtures.
+
+```bash
+python third_party/SH_injection/SH_Generalization_num/Data_prepare/gen_mix_test_num8.py \
+  --chunk_len 2 \
+  --num_process 8
+```
+
+The mix scripts write three parallel targets:
+
+- `mix/`: noisy multi-channel mixture.
+- `reverb_ref/`: reverberant clean speech.
+- `noreverb_ref/`: early/direct clean reference used by the current training and evaluation scripts.
 
 ## Training
 
-The current `train.py` imports the 10% subset loader:
-
-```python
-from loader.small_test import make_fix_loader
-```
-
-This is useful for debugging and quick experiments. For full training, switch it
-back to:
-
-```python
-from loader.IGCRN_dataloader import make_fix_loader
-```
-
-Run training with ADFS enabled:
+Install dependencies:
 
 ```bash
-python train.py --gpuid 0 --num_epoch 100 --batch_size 2
+pip install -r requirements.txt
 ```
 
-Run the no-ADFS baseline:
+Run 8Mic baseline training:
 
 ```bash
-python train.py --no_adfs --gpuid 0 --num_epoch 100 --batch_size 2
+python train.py \
+  --num_epoch 100 \
+  --batch_size 2 \
+  --num_worker 0 \
+  --model_dir model_tfg_serial_8mic
 ```
 
-Checkpoints are written to:
+Important default paths in `train.py`:
 
 ```text
-model_test/          # ADFS enabled
-model_test_noadfs/   # ADFS disabled
+--train_wav_scp  /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt
+--train_mix_dir  /data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/mix
+--train_ref_dir  /data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/noreverb_ref
+--train_mic_dir  /data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC
+--val_wav_scp    /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt
+--val_mix_dir    /data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/mix
+--val_ref_dir    /data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/noreverb_ref
+--val_mic_dir    /data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC
 ```
 
-Logs and TensorBoard events are written to `logs/` and `runs/`.
+Training saves checkpoints and loss curves to:
+
+```text
+model_tfg_serial_8mic/
+```
 
 ## Inference
 
-Run inference using the best ADFS checkpoint:
+Run 8Mic inference with the best checkpoint:
 
 ```bash
 python inference.py \
-  --modelpath model_test/ \
+  --modelpath model_tfg_serial_8mic \
   --model_name model_best.pth \
+  --test_name mic_8 \
   --file_path /data/lizhe/SH_data/Mic8_2s_gpurir \
   --mic_path_root /data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/test_rir
 ```
 
-Run inference for a no-ADFS checkpoint:
-
-```bash
-python inference.py --no_adfs --modelpath model_test_noadfs/
-```
-
-Enhanced wavs are saved under the dataset root, for example:
+Enhanced wavs are saved to:
 
 ```text
 /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_tfg_serial_test_mic_8/
 ```
 
+`inference.py` also prints average PESQ/STOI and saves a `.mat` summary under:
+
+```text
+model_tfg_serial_8mic/result_model_best/
+```
+
 ## Evaluation
 
-Use `evaluation_fixed.py` for detailed metrics:
+Run detailed evaluation after inference:
 
 ```bash
 python evaluation_fixed.py \
@@ -143,46 +348,46 @@ python evaluation_fixed.py \
   --test_name mic_8
 ```
 
-It saves per-utterance CSV, summary CSV, and `.mat` metric files.
+The evaluation script reports and saves:
 
-## GitCode Synchronization
+- PESQ
+- STOI
+- SDR
+- SI-SDR
+- per-utterance CSV
+- average summary CSV
+- MATLAB `.mat` file
 
-The repository remote is expected to be:
+## Model Input Processing
 
-```bash
-git@gitcode.com:maple_leaff/TFG.git
-```
+During training and inference:
 
-Recommended workflow:
+1. Read 8-channel mixture wav.
+2. Read microphone geometry from `mic_array_pos*.npy`.
+3. Convert Cartesian microphone positions to spherical coordinates.
+4. Convert the 8-channel mixture to 4th-order real spherical harmonic
+   coefficients with `spaudiopy.sph.src_to_sh`.
+5. Feed 25 SH coefficients into TFGridNetV2.
 
-```bash
-git status
-git pull --rebase origin main
-git add README.md requirements.txt .gitignore scripts/clean_artifacts.sh
-git commit -m "Add project documentation and cleanup helpers"
-git push origin main
+The relevant code is:
+
+```text
+loader/IGCRN_dataloader.py
+inference.py
+networks/tfgridnetv2.py
 ```
 
 ## Cleanup
 
-Runtime artifacts such as checkpoints, TensorBoard events, logs, caches, and
-notebook checkpoints are ignored by `.gitignore`.
-
-To clean local generated artifacts manually:
+Generated artifacts are ignored by `.gitignore`. To remove local runtime outputs:
 
 ```bash
 bash scripts/clean_artifacts.sh
 ```
 
-The cleanup script removes common local outputs only. It does not touch source
-files or Git history.
-
-If artifacts were already tracked by Git, remove them from the Git index while
-keeping local files:
+If generated files were accidentally tracked, remove them from Git tracking while
+keeping local copies:
 
 ```bash
 bash scripts/untrack_artifacts.sh
 ```
-
-Commit that change before pushing if you want GitCode to stop storing those
-generated files.

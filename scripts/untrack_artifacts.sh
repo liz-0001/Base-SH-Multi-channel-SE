@@ -13,8 +13,7 @@ git rm -r --cached --ignore-unmatch \
   .vscode \
   logs \
   runs \
-  model_test \
-  model_test_noadfs \
+  model_tfg_serial_8mic \
   record
 
 git rm --cached --ignore-unmatch \

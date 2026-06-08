@@ -23,8 +23,7 @@ import torch.nn as nn
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 #数据
-#from loader.IGCRN_dataloader import make_fix_loader
-from loader.small_test import make_fix_loader
+from loader.IGCRN_dataloader import make_fix_loader
 from networks.tfgridnetv2 import TFGridNetV2
 # 地址复用 本地：/data/lizhe/SH_data 服务器：/root/autodl-tmp
 from pathlib import Path
@@ -55,18 +54,6 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.enabled = False
 
-# =========================
-# 1.2. 导入自定义模块切换训练模式
-#==========================
-def set_trainable(model, module_name="adfs_optimizer", trainable=False):
-    # 检查是否使用了 DataParallel
-    real_model = model.module if hasattr(model, 'module') else model
-    
-    for name, param in real_model.named_parameters():
-        if module_name in name:
-            param.requires_grad = trainable
-            # 打印一下确认状态（可选）
-            # print(f"Setting {name} trainable={trainable}")
 # =========================
 # 2. 参数设置
 # =========================
@@ -139,17 +126,17 @@ parser.add_argument("--resume", action="store_true", help="是否从已有模型
 parser.add_argument(
     "--resume_model",
     type=str,
-    default="model_test",
+    default="model_tfg_serial_8mic/model_best.pth",
     help="继续训练时加载的模型路径"
 )
 parser.add_argument(
-    "--no_adfs",
-    action="store_true",
-    help="关闭 ADFS，仅训练 TFGridNet backbone（对应论文无 ADFS 基线）",
+    "--model_dir",
+    type=str,
+    default="model_tfg_serial_8mic",
+    help="模型保存目录"
 )
 
 args = parser.parse_args()
-use_adfs = not args.no_adfs
 
 # =========================
 # 3. 设备设置
@@ -276,14 +263,13 @@ if __name__ == "__main__":
         n_srcs=1,
         n_fft=fft_len,
         stride=256,
-        n_imics=25,
+        n_imics=25,#球谐通道纬度
         n_layers=3,
         lstm_hidden_units=128,
         attn_approx_qk_dim=256,
         emb_dim=32,
-        use_adfs=use_adfs,
     )
-    log_info(f"ADFS enabled: {use_adfs}")
+    log_info("Baseline model: TFGridNetV2 serial SHC input, no ADFS")
 
     if torch.cuda.device_count() > 1 and device.type == "cuda":
         log_info(f"Use {torch.cuda.device_count()} GPUs for DataParallel")
@@ -295,24 +281,8 @@ if __name__ == "__main__":
         log_info(f"Resume training from: {args.resume_model}")
         state_dict = torch.load(args.resume_model, map_location=device)
         network.load_state_dict(state_dict, strict=False)
-        log_info("Successfully loaded backbone weights. New parameters (Alpha/ADFS) initialized from defaults.")
+        log_info("Successfully loaded checkpoint.")
     network = network.to(device)
-    # --- 在主循环开始前的临时测试代码 ---
-    log_info("--- Running ADFS Integration Check ---")
-
-    real_net = network.module if hasattr(network, "module") else network
-    if use_adfs:
-        if getattr(real_net, "adfs_optimizer", None) is not None:
-            log_info("Success: ADFS module found in the network.")
-        else:
-            log_info("Error: ADFS module NOT found!")
-        for name, param in network.named_parameters():
-            if "adfs_optimizer" in name:
-                log_info(f"Param: {name} | Requires_Grad: {param.requires_grad}")
-    else:
-        log_info("ADFS disabled; backbone-only training.")
-
-    log_info("--- Check Done ---")    
 
     # =========================
     # 7. 优化器、损失函数、日志
@@ -327,7 +297,7 @@ if __name__ == "__main__":
         "runs/Fine_tuning_{}/".format(time.strftime("%Y-%m-%d-%H-%M-%S", NowTime))
     )
 
-    modelpath = "model_test_noadfs/" if not use_adfs else "model_test/"
+    modelpath = args.model_dir
     os.makedirs(modelpath, exist_ok=True)
     log_info(f"Model save dir: {modelpath}")
 
@@ -365,28 +335,6 @@ if __name__ == "__main__":
     )
     for epoch in range(args.num_epoch):
         epoch_id = epoch + 1
-        if use_adfs:
-            if epoch_id <= 10:
-                set_trainable(network, module_name="adfs_optimizer", trainable=False)
-                if epoch_id == 1:
-                    log_info("Stage 1: ADFS is frozen. Training backbone only.")
-            else:
-                set_trainable(network, module_name="adfs_optimizer", trainable=True)
-                if epoch_id == 11:
-                    log_info("Stage 2: ADFS is unfrozen. Training all modules.")
-                    adfs_params = []
-                    backbone_params = []
-                    real_model = network.module if hasattr(network, 'module') else network
-                    for name, param in real_model.named_parameters():
-                        if "adfs_optimizer" in name or "adfs_alpha" in name:
-                            adfs_params.append(param)
-                        else:
-                            backbone_params.append(param)
-                    optimizer = optim.Adam([
-                        {'params': adfs_params, 'lr': 1e-2},
-                        {'params': backbone_params, 'lr': args.lr}
-                    ])
-
 
         # =========================
         # 8.1 训练阶段
@@ -424,14 +372,6 @@ if __name__ == "__main__":
             loss = loss_function(outputs[0][0], target)
 
             loss.backward()
-            # 在 train.py 的 optimizer.step() 之前加入
-            if use_adfs and epoch_id > 10:
-                real_model = network.module if hasattr(network, 'module') else network
-                if getattr(real_model, 'adfs_alpha', None) is not None:
-                    alpha_val = real_model.adfs_alpha.item()
-                    alpha_grad = real_model.adfs_alpha.grad.item() if real_model.adfs_alpha.grad is not None else 0
-                    if idx % 100 == 0:
-                        tqdm.write(f"Step {idx} | Alpha: {alpha_val:.4f} | Alpha_Grad: {alpha_grad:.6e}")
             optimizer.step()
 
             loss_item = loss.item()

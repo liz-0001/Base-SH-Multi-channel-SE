@@ -7,8 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
 from torch.nn.parameter import Parameter
-# 引入adfs模块
-from networks.adfs_module import SHC_ADFS
 
 from espnet2.enh.decoder.stft_decoder import STFTDecoder
 from espnet2.enh.encoder.stft_encoder import STFTEncoder
@@ -68,7 +66,7 @@ class TFGridNetV2(AbsSeparator):
             n_fft=128,
             stride=64,
             window="hann",
-            n_imics=8,#麦克风数
+            n_imics=25,#输入模型的纬度 球谐通道数
             n_layers=6,#gradnet块数
             lstm_hidden_units=192,
             attn_n_head=4,
@@ -79,13 +77,11 @@ class TFGridNetV2(AbsSeparator):
             activation="prelu",
             eps=1.0e-5,
             use_builtin_complex=False,
-            use_adfs=True,
     ):
         super().__init__()
         self.n_srcs = n_srcs
         self.n_layers = n_layers
         self.n_imics = n_imics
-        self.use_adfs = use_adfs
         assert n_fft % 2 == 0
         n_freqs = n_fft // 2 + 1
 
@@ -100,15 +96,6 @@ class TFGridNetV2(AbsSeparator):
             nn.Conv2d(2 * n_imics, emb_dim, ks, padding=padding),
             nn.GroupNorm(1, emb_dim, eps=eps),
         )
-        if self.use_adfs:
-            self.adfs_optimizer = SHC_ADFS(
-                num_sh_channels=2 * n_imics,
-                num_freq_bins=n_freqs
-            )
-            self.adfs_alpha = nn.Parameter(torch.tensor(0.1))
-        else:
-            self.adfs_optimizer = None
-            self.adfs_alpha = None
 
         self.blocks = nn.ModuleList([])
         for _ in range(n_layers):
@@ -163,10 +150,6 @@ class TFGridNetV2(AbsSeparator):
         batch = torch.cat((batch0.real, batch0.imag), dim=1)  # [B, 2*M, T, F]
         n_batch, _, n_frames, n_freqs = batch.shape
 
-        if self.use_adfs:
-            identity = batch
-            batch_adfs, _ = self.adfs_optimizer(batch)
-            batch = identity + self.adfs_alpha * batch_adfs
         batch = self.conv(batch)  # [B, -1, T, F]
 
         for ii in range(self.n_layers):
