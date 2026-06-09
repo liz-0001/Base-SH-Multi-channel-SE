@@ -5,6 +5,16 @@
   --num_worker 8 \
   --lr 1e-3 \
   --model_dir model_tfg_serial_8mic 保存的文件
+  python -u train.py \
+  --gpus 0,1,2,3 \
+  --loss_type mse_sisdr_stft \ 或者mse
+  --sisdr_weight 0.01 \
+  --stft_weight 0.5 \
+  --num_epoch 100 \
+  --batch_size 8 \
+  --num_worker 4 \
+  --lr 1e-3 \
+  --model_dir exp/loss_mse_sisdr_stft
 autodl
 python -u train.py \
   --gpus 0,1,2,3 \

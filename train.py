@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 #数据
@@ -127,6 +128,17 @@ parser.add_argument("--lr", type=float, default=1e-3, help="学习率")
 parser.add_argument("--batch_size", type=int, default=8, help="global batch size")
 parser.add_argument("--log_interval", type=int, default=20, help="进度条刷新 loss 的 step 间隔")
 parser.add_argument("--disable_tqdm", action="store_true", help="关闭控制台进度条")
+parser.add_argument(
+    "--loss_type",
+    type=str,
+    default="mse",
+    choices=["mse", "mse_sisdr", "mse_stft", "mse_sisdr_stft"],
+    help="训练损失类型；论文 baseline 用 mse",
+)
+parser.add_argument("--sisdr_weight", type=float, default=0.01, help="SI-SDR loss 权重")
+parser.add_argument("--stft_weight", type=float, default=0.5, help="STFT loss 权重")
+parser.add_argument("--stft_loss_fft", type=int, default=512, help="STFT loss 的 FFT 长度")
+parser.add_argument("--stft_loss_hop", type=int, default=256, help="STFT loss 的 hop 长度")
 parser.add_argument("--fft_len", type=int, default=512)
 parser.add_argument("--channel", type=int, default=8)
 parser.add_argument("--repeat", type=int, default=1)
@@ -218,6 +230,85 @@ def check_path_exists(path_name, path_value):
         raise FileNotFoundError(f"{path_name} 不存在: {path_value}")
 
 
+class EnhancementLoss(nn.Module):
+    def __init__(
+        self,
+        loss_type="mse",
+        sisdr_weight=0.01,
+        stft_weight=0.5,
+        stft_fft=512,
+        stft_hop=256,
+        eps=1.0e-8,
+    ):
+        super().__init__()
+        self.loss_type = loss_type
+        self.sisdr_weight = sisdr_weight
+        self.stft_weight = stft_weight
+        self.stft_fft = stft_fft
+        self.stft_hop = stft_hop
+        self.eps = eps
+        self.mse = nn.MSELoss()
+        self.register_buffer("window", torch.hann_window(stft_fft), persistent=False)
+
+    def forward(self, estimate, target):
+        estimate = estimate.float()
+        target = target.float()
+
+        mse_loss = self.mse(estimate, target)
+        sisdr_loss = estimate.new_tensor(0.0)
+        stft_loss = estimate.new_tensor(0.0)
+
+        total_loss = mse_loss
+        if "sisdr" in self.loss_type:
+            sisdr_loss = self.si_sdr_loss(estimate, target)
+            total_loss = total_loss + self.sisdr_weight * sisdr_loss
+        if "stft" in self.loss_type:
+            stft_loss = self.log_stft_mag_loss(estimate, target)
+            total_loss = total_loss + self.stft_weight * stft_loss
+
+        stats = {
+            "total": total_loss.detach(),
+            "mse": mse_loss.detach(),
+            "sisdr": sisdr_loss.detach(),
+            "stft": stft_loss.detach(),
+        }
+        return total_loss, stats
+
+    def si_sdr_loss(self, estimate, target):
+        estimate = estimate - torch.mean(estimate, dim=-1, keepdim=True)
+        target = target - torch.mean(target, dim=-1, keepdim=True)
+
+        dot = torch.sum(estimate * target, dim=-1, keepdim=True)
+        target_energy = torch.sum(target ** 2, dim=-1, keepdim=True) + self.eps
+        projection = dot * target / target_energy
+        noise = estimate - projection
+
+        ratio = torch.sum(projection ** 2, dim=-1) / (torch.sum(noise ** 2, dim=-1) + self.eps)
+        si_sdr = 10 * torch.log10(ratio + self.eps)
+        return -torch.mean(si_sdr)
+
+    def log_stft_mag_loss(self, estimate, target):
+        estimate_spec = torch.stft(
+            estimate,
+            n_fft=self.stft_fft,
+            hop_length=self.stft_hop,
+            win_length=self.stft_fft,
+            window=self.window.to(estimate.device),
+            return_complex=True,
+        )
+        target_spec = torch.stft(
+            target,
+            n_fft=self.stft_fft,
+            hop_length=self.stft_hop,
+            win_length=self.stft_fft,
+            window=self.window.to(target.device),
+            return_complex=True,
+        )
+        estimate_mag = torch.abs(estimate_spec)
+        target_mag = torch.abs(target_spec)
+        return F.l1_loss(torch.log1p(estimate_mag), torch.log1p(target_mag))
+
+
 def log_training_config():
     rows = [
         ("CUDA_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "<not set>")),
@@ -236,7 +327,11 @@ def log_training_config():
         ("chunk_seconds", str(args.chunk)),
         ("sample_rate", str(args.sample_rate)),
         ("optimizer", "Adam"),
-        ("loss", "MSELoss"),
+        ("loss_type", args.loss_type),
+        ("sisdr_weight", str(args.sisdr_weight)),
+        ("stft_weight", str(args.stft_weight)),
+        ("stft_loss_fft", str(args.stft_loss_fft)),
+        ("stft_loss_hop", str(args.stft_loss_hop)),
         ("model_dir", str(args.model_dir)),
     ]
     log_info("========== Training Config ==========")
@@ -294,7 +389,11 @@ def save_run_config(log_dir, modelpath):
             "attn_approx_qk_dim": 256,
             "emb_dim": 32,
             "optimizer": "Adam",
-            "loss": "MSELoss",
+            "loss_type": args.loss_type,
+            "sisdr_weight": args.sisdr_weight,
+            "stft_weight": args.stft_weight,
+            "stft_loss_fft": args.stft_loss_fft,
+            "stft_loss_hop": args.stft_loss_hop,
         }
     )
     for out_dir in [log_dir, Path(modelpath)]:
@@ -410,7 +509,17 @@ if __name__ == "__main__":
         filter(lambda p: p.requires_grad, network.parameters()), 
         lr=args.lr
     )
-    loss_function = nn.MSELoss()
+    loss_function = EnhancementLoss(
+        loss_type=args.loss_type,
+        sisdr_weight=args.sisdr_weight,
+        stft_weight=args.stft_weight,
+        stft_fft=args.stft_loss_fft,
+        stft_hop=args.stft_loss_hop,
+    ).to(device)
+    log_info(
+        f"Loss function: {args.loss_type} | "
+        f"sisdr_weight={args.sisdr_weight} | stft_weight={args.stft_weight}"
+    )
 
     writer = SummaryWriter(
         "runs/Fine_tuning_{}/".format(time.strftime("%Y-%m-%d-%H-%M-%S", NowTime))
@@ -494,7 +603,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             outputs = network(shc_input.transpose(1, 2), ilens)
-            loss = loss_function(outputs[0][0], target)
+            loss, loss_stats = loss_function(outputs[0][0], target)
 
             loss.backward()
             optimizer.step()
@@ -504,12 +613,24 @@ if __name__ == "__main__":
             train_step_count += 1
 
             writer.add_scalars("Loss", {"Train": loss_item}, iter_count)
+            writer.add_scalars(
+                "Loss_Components_Train",
+                {
+                    "mse": loss_stats["mse"].item(),
+                    "sisdr": loss_stats["sisdr"].item(),
+                    "stft": loss_stats["stft"].item(),
+                },
+                iter_count,
+            )
             iter_count += 1
 
             if idx % args.log_interval == 0 or idx == len(train_loader) - 1:
                 train_bar.set_postfix(
                     loss=f"{loss_item:.6f}",
                     avg=f"{train_loss_sum / train_step_count:.6f}",
+                    mse=f"{loss_stats['mse'].item():.3e}",
+                    sisdr=f"{loss_stats['sisdr'].item():.3f}",
+                    stft=f"{loss_stats['stft'].item():.3e}",
                     lr=f"{current_lr(optimizer):.2e}",
                 )
 
@@ -553,7 +674,7 @@ if __name__ == "__main__":
                 )
 
                 outputs = network(shc_input.transpose(1, 2), ilens)
-                loss_val = loss_function(outputs[0][0], target)
+                loss_val, loss_val_stats = loss_function(outputs[0][0], target)
 
                 loss_val_item = loss_val.item()
                 val_loss_sum += loss_val_item
@@ -562,7 +683,10 @@ if __name__ == "__main__":
                 if idx % args.log_interval == 0 or idx == len(val_loader) - 1:
                     val_bar.set_postfix(
                         loss=f"{loss_val_item:.6f}",
-                        avg=f"{val_loss_sum / val_step_count:.6f}"
+                        avg=f"{val_loss_sum / val_step_count:.6f}",
+                        mse=f"{loss_val_stats['mse'].item():.3e}",
+                        sisdr=f"{loss_val_stats['sisdr'].item():.3f}",
+                        stft=f"{loss_val_stats['stft'].item():.3e}",
                     )
 
                 del shc_input, target, ilens, outputs, loss_val
