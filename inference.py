@@ -26,6 +26,64 @@ warnings.filterwarnings("ignore")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def format_number(value):
+    value = float(value)
+    if value >= 1e9:
+        return f"{value / 1e9:.3f}G"
+    if value >= 1e6:
+        return f"{value / 1e6:.3f}M"
+    if value >= 1e3:
+        return f"{value / 1e3:.3f}K"
+    return f"{value:.0f}"
+
+
+def print_model_profile(model, profile_model=False, sample_rate=16000, chunk=2, n_imics=25):
+    real_model = model.module if hasattr(model, "module") else model
+    total_params = sum(p.numel() for p in real_model.parameters())
+    trainable_params = sum(p.numel() for p in real_model.parameters() if p.requires_grad)
+
+    print("========== Model Profile ==========")
+    print(f"{'parameters_total':<22}: {total_params:,} ({format_number(total_params)})")
+    print(f"{'parameters_trainable':<22}: {trainable_params:,} ({format_number(trainable_params)})")
+    print(f"{'parameters_frozen':<22}: {total_params - trainable_params:,} ({format_number(total_params - trainable_params)})")
+
+    if not profile_model:
+        print("MACs/FLOPs estimate   : skipped; add --profile_model to enable")
+        print("===================================")
+        return
+
+    try:
+        from thop import profile
+
+        was_training = real_model.training
+        real_model.eval()
+        n_samples = sample_rate * chunk
+        dummy_input = torch.randn(1, n_samples, n_imics, device=device)
+        dummy_ilens = torch.full((1,), n_samples, dtype=torch.int64, device=device)
+        with torch.no_grad():
+            macs, params_from_thop = profile(
+                real_model,
+                inputs=(dummy_input, dummy_ilens),
+                verbose=False,
+            )
+        if was_training:
+            real_model.train()
+
+        print(f"{'profile_input':<22}: batch=1 | seconds={chunk} | samples={n_samples} | channels={n_imics}")
+        print(f"{'MACs':<22}: {macs:,.0f} ({format_number(macs)})")
+        print(f"{'FLOPs_approx':<22}: {2 * macs:,.0f} ({format_number(2 * macs)})")
+        print(f"{'thop_params':<22}: {params_from_thop:,.0f} ({format_number(params_from_thop)})")
+    except Exception as exc:
+        print(f"MACs/FLOPs estimate   : failed ({type(exc).__name__}: {exc})")
+    print("===================================")
+
+
+def get_mic_path(mic_dir, mic_prefix, utt_id):
+    mic_id = utt_id.split('#')[2].split('rir', 1)[-1]
+    mic_id = mic_id.removesuffix('.wav').removesuffix('.npy')
+    return os.path.join(mic_dir, mic_prefix + mic_id + '.npy')
+
+
 def audioread(path, fs=16000):
     wave_data, sr = sf.read(path)
     if sr != fs:
@@ -120,6 +178,7 @@ if __name__ == "__main__":
     _parser.add_argument("--mic_prefix", type=str, default="mic_array_pos")
     _parser.add_argument("--test_name", type=str, default="mic_8")
     _parser.add_argument("--gpus", type=str, default="0")
+    _parser.add_argument("--profile_model", action="store_true", help="打印参数量和 2 秒输入的计算量估计")
     _inf_args = _parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = _inf_args.gpus
@@ -187,6 +246,7 @@ if __name__ == "__main__":
             load_network = torch.nn.DataParallel(load_network)
 
         load_network.eval()
+        print_model_profile(load_network, profile_model=_inf_args.profile_model)
 
         pesq_mix_list = []
         pesq_est_list = []
@@ -206,8 +266,7 @@ if __name__ == "__main__":
                 mix_path = os.path.join(wav_path, utt_id_wav)
                 ref_path = os.path.join(ref_dir, utt_id_wav)
 
-                mic_id = utt_id.split('#')[2].split('rir')[-1]
-                mic_path = os.path.join(mic_dir, mic_prefix + mic_id + '.npy')
+                mic_path = get_mic_path(mic_dir, mic_prefix, utt_id)
 
                 try:
                     pesq_mix, pesq_est, stoi_mix, stoi_est, est = wav_generator(mix_path, ref_path, mic_path)

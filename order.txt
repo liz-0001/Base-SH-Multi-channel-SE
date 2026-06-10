@@ -31,3 +31,10 @@ python -u train.py \
   --num_worker 4 \
   --lr 1e-3 \
   --model_dir model_tfg_serial_8mic
+
+  推理 可直接输出计算量
+  python -u inference.py \
+  --modelpath exp/loss_mse_sisdr_stft \
+  --model_name model_best.pth \
+  --test_name mic_8 \
+  --profile_model
