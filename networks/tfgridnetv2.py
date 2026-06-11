@@ -15,6 +15,90 @@ from espnet2.enh.separator.abs_separator import AbsSeparator
 from espnet2.torch_utils.get_layer_from_string import get_layer
 
 
+class OrderWiseSHGroupingEncoder(nn.Module):
+    """Encode SH coefficients order by order before the TFGridNet backbone.
+
+    The baseline STFT feature is arranged as [real(order 0..N), imag(order 0..N)]
+    along the channel dimension. For each order l, this module groups the
+    corresponding real and imaginary SH components, encodes them independently,
+    then fuses all order embeddings back to emb_dim.
+    """
+
+    def __init__(
+            self,
+            n_imics,
+            emb_dim,
+            order_hidden_dim=None,
+            sh_order=None,
+            kernel_size=(3, 3),
+            eps=1.0e-5,
+    ):
+        super().__init__()
+
+        inferred_order = int(math.isqrt(n_imics) - 1)
+        if (inferred_order + 1) ** 2 != n_imics:
+            raise ValueError(
+                f"n_imics={n_imics} is not a valid SH channel count. "
+                "Expected (N + 1)^2."
+            )
+        if sh_order is not None and sh_order != inferred_order:
+            raise ValueError(
+                f"sh_order={sh_order} does not match n_imics={n_imics}; "
+                f"expected sh_order={inferred_order}."
+            )
+
+        self.n_imics = n_imics
+        self.sh_order = inferred_order
+        self.num_orders = inferred_order + 1
+        self.order_hidden_dim = order_hidden_dim or emb_dim
+
+        padding = (kernel_size[0] // 2, kernel_size[1] // 2)
+        self.order_slices = [
+            (order ** 2, (order + 1) ** 2)
+            for order in range(self.num_orders)
+        ]
+
+        self.order_encoders = nn.ModuleList()
+        for start, end in self.order_slices:
+            order_channels = end - start
+            self.order_encoders.append(
+                nn.Sequential(
+                    nn.Conv2d(2 * order_channels, self.order_hidden_dim, kernel_size, padding=padding),
+                    nn.GroupNorm(1, self.order_hidden_dim, eps=eps),
+                    nn.PReLU(self.order_hidden_dim),
+                )
+            )
+
+        self.fuse = nn.Sequential(
+            nn.Conv2d(self.num_orders * self.order_hidden_dim, emb_dim, 1),
+            nn.GroupNorm(1, emb_dim, eps=eps),
+        )
+
+    def forward(self, x):
+        """Encode grouped SH orders.
+
+        Args:
+            x: [B, 2 * M, T, F], with real SH channels followed by imaginary SH channels.
+
+        Returns:
+            Tensor with shape [B, emb_dim, T, F], matching the original input projection.
+        """
+        if x.shape[1] != 2 * self.n_imics:
+            raise ValueError(
+                f"Expected {2 * self.n_imics} input channels, got {x.shape[1]}."
+            )
+
+        real = x[:, :self.n_imics]
+        imag = x[:, self.n_imics:]
+
+        order_features = []
+        for encoder, (start, end) in zip(self.order_encoders, self.order_slices):
+            grouped = torch.cat((real[:, start:end], imag[:, start:end]), dim=1)
+            order_features.append(encoder(grouped))
+
+        return self.fuse(torch.cat(order_features, dim=1))
+
+
 class TFGridNetV2(AbsSeparator):
     """Offline TFGridNetV2. Compared with TFGridNet, TFGridNetV2 speeds up the code
         by vectorizing multiple heads in self-attention, and better dealing with
@@ -77,11 +161,17 @@ class TFGridNetV2(AbsSeparator):
             activation="prelu",
             eps=1.0e-5,
             use_builtin_complex=False,
+            enable_order_grouping=False,
+            sh_order=None,
+            order_hidden_dim=None,
     ):
         super().__init__()
         self.n_srcs = n_srcs
         self.n_layers = n_layers
         self.n_imics = n_imics
+        self.enable_order_grouping = enable_order_grouping
+        self.sh_order = sh_order
+        self.order_hidden_dim = order_hidden_dim
         assert n_fft % 2 == 0
         n_freqs = n_fft // 2 + 1
 
@@ -92,10 +182,20 @@ class TFGridNetV2(AbsSeparator):
 
         t_ksize = 3
         ks, padding = (t_ksize, 3), (t_ksize // 2, 1)
-        self.conv = nn.Sequential(
-            nn.Conv2d(2 * n_imics, emb_dim, ks, padding=padding),
-            nn.GroupNorm(1, emb_dim, eps=eps),
-        )
+        if enable_order_grouping:
+            self.conv = OrderWiseSHGroupingEncoder(
+                n_imics=n_imics,
+                emb_dim=emb_dim,
+                order_hidden_dim=order_hidden_dim,
+                sh_order=sh_order,
+                kernel_size=ks,
+                eps=eps,
+            )
+        else:
+            self.conv = nn.Sequential(
+                nn.Conv2d(2 * n_imics, emb_dim, ks, padding=padding),
+                nn.GroupNorm(1, emb_dim, eps=eps),
+            )
 
         self.blocks = nn.ModuleList([])
         for _ in range(n_layers):

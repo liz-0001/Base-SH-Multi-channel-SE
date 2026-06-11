@@ -144,6 +144,14 @@ parser.add_argument("--channel", type=int, default=8)
 parser.add_argument("--repeat", type=int, default=1)
 parser.add_argument("--chunk", type=int, default=2)
 parser.add_argument("--sample_rate", type=int, default=16000)
+parser.add_argument("--enable_order_grouping", action="store_true", help="开启 order-wise SH grouping 前端")
+parser.add_argument("--sh_order", type=int, default=4, help="SH 最大阶数；8mic baseline 当前为 4 阶，通道数 25")
+parser.add_argument(
+    "--order_hidden_dim",
+    type=int,
+    default=None,
+    help="每个 SH 阶 encoder 的 hidden dim；默认等于 emb_dim",
+)
 parser.add_argument("--resume", action="store_true", help="是否从已有模型继续训练")
 parser.add_argument(
     "--resume_model",
@@ -316,8 +324,10 @@ def log_training_config():
         ("visible_gpu_count", str(torch.cuda.device_count())),
         ("model", "TFGridNetV2 serial"),
         ("mic", "8"),
-        ("sh_order", "4"),
+        ("sh_order", str(args.sh_order)),
         ("sh_channels", "25"),
+        ("enable_order_grouping", str(args.enable_order_grouping)),
+        ("order_hidden_dim", str(args.order_hidden_dim)),
         ("epochs", str(args.num_epoch)),
         ("batch_size", str(args.batch_size)),
         ("num_worker", str(args.num_worker)),
@@ -384,6 +394,9 @@ def save_run_config(log_dir, modelpath):
             "visible_gpu_count": torch.cuda.device_count(),
             "model": "TFGridNetV2 serial",
             "n_imics": 25,
+            "enable_order_grouping": args.enable_order_grouping,
+            "sh_order": args.sh_order,
+            "order_hidden_dim": args.order_hidden_dim,
             "n_layers": 3,
             "lstm_hidden_units": 128,
             "attn_approx_qk_dim": 256,
@@ -486,8 +499,17 @@ if __name__ == "__main__":
         lstm_hidden_units=128,
         attn_approx_qk_dim=256,
         emb_dim=32,
+        enable_order_grouping=args.enable_order_grouping,
+        sh_order=args.sh_order,
+        order_hidden_dim=args.order_hidden_dim,
     )
-    log_info("Baseline model: TFGridNetV2 serial SHC input, no ADFS")
+    if args.enable_order_grouping:
+        log_info(
+            "Model: TFGridNetV2 serial + order-wise SH grouping "
+            f"(sh_order={args.sh_order}, order_hidden_dim={args.order_hidden_dim or 32})"
+        )
+    else:
+        log_info("Baseline model: TFGridNetV2 serial SHC input, no ADFS")
 
     if torch.cuda.device_count() > 1 and device.type == "cuda":
         log_info(f"Use {torch.cuda.device_count()} GPUs for DataParallel")

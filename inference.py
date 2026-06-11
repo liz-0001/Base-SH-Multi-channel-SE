@@ -179,6 +179,9 @@ if __name__ == "__main__":
     _parser.add_argument("--test_name", type=str, default="mic_8")
     _parser.add_argument("--gpus", type=str, default="0")
     _parser.add_argument("--profile_model", action="store_true", help="打印参数量和 2 秒输入的计算量估计")
+    _parser.add_argument("--enable_order_grouping", action="store_true", help="推理 grouping-only 模型时开启")
+    _parser.add_argument("--sh_order", type=int, default=4)
+    _parser.add_argument("--order_hidden_dim", type=int, default=None)
     _inf_args = _parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = _inf_args.gpus
@@ -219,8 +222,17 @@ if __name__ == "__main__":
             lstm_hidden_units=128,
             attn_approx_qk_dim=256,
             emb_dim=32,
+            enable_order_grouping=_inf_args.enable_order_grouping,
+            sh_order=_inf_args.sh_order,
+            order_hidden_dim=_inf_args.order_hidden_dim,
         )
-        print("Baseline model: TFGridNetV2 serial SHC input, no ADFS")
+        if _inf_args.enable_order_grouping:
+            print(
+                "Model: TFGridNetV2 serial + order-wise SH grouping "
+                f"(sh_order={_inf_args.sh_order}, order_hidden_dim={_inf_args.order_hidden_dim or 32})"
+            )
+        else:
+            print("Baseline model: TFGridNetV2 serial SHC input, no ADFS")
 
         state_dict = torch.load(modelname, map_location='cpu')
 
