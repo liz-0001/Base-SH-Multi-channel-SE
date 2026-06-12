@@ -5,77 +5,19 @@ Created on Tue Apr 28 15:43:18 2020
 @author: admin
 """
 
-import shutil
-import argparse
 import librosa
 import spaudiopy
 import torch
 import os
-import fnmatch
 import numpy as np
 import soundfile as sf
-from scipy import signal, io
 from tqdm import tqdm
-from evaluation_fixed import NB_PESQ, STOI
 import warnings
-from multiprocessing import Pool
 from networks.tfgridnetv2 import TFGridNetV2
 
 warnings.filterwarnings("ignore")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def format_number(value):
-    value = float(value)
-    if value >= 1e9:
-        return f"{value / 1e9:.3f}G"
-    if value >= 1e6:
-        return f"{value / 1e6:.3f}M"
-    if value >= 1e3:
-        return f"{value / 1e3:.3f}K"
-    return f"{value:.0f}"
-
-
-def print_model_profile(model, profile_model=False, sample_rate=16000, chunk=2, n_imics=25):
-    real_model = model.module if hasattr(model, "module") else model
-    total_params = sum(p.numel() for p in real_model.parameters())
-    trainable_params = sum(p.numel() for p in real_model.parameters() if p.requires_grad)
-
-    print("========== Model Profile ==========")
-    print(f"{'parameters_total':<22}: {total_params:,} ({format_number(total_params)})")
-    print(f"{'parameters_trainable':<22}: {trainable_params:,} ({format_number(trainable_params)})")
-    print(f"{'parameters_frozen':<22}: {total_params - trainable_params:,} ({format_number(total_params - trainable_params)})")
-
-    if not profile_model:
-        print("MACs/FLOPs estimate   : skipped; add --profile_model to enable")
-        print("===================================")
-        return
-
-    try:
-        from thop import profile
-
-        was_training = real_model.training
-        real_model.eval()
-        n_samples = sample_rate * chunk
-        dummy_input = torch.randn(1, n_samples, n_imics, device=device)
-        dummy_ilens = torch.full((1,), n_samples, dtype=torch.int64, device=device)
-        with torch.no_grad():
-            macs, params_from_thop = profile(
-                real_model,
-                inputs=(dummy_input, dummy_ilens),
-                verbose=False,
-            )
-        if was_training:
-            real_model.train()
-
-        print(f"{'profile_input':<22}: batch=1 | seconds={chunk} | samples={n_samples} | channels={n_imics}")
-        print(f"{'MACs':<22}: {macs:,.0f} ({format_number(macs)})")
-        print(f"{'FLOPs_approx':<22}: {2 * macs:,.0f} ({format_number(2 * macs)})")
-        print(f"{'thop_params':<22}: {params_from_thop:,.0f} ({format_number(params_from_thop)})")
-    except Exception as exc:
-        print(f"MACs/FLOPs estimate   : failed ({type(exc).__name__}: {exc})")
-    print("===================================")
 
 
 def get_mic_path(mic_dir, mic_prefix, utt_id):
@@ -95,10 +37,6 @@ def audioread(path, fs=16000):
     return wave_data
 
 
-def calculate_metrics(ref, mix, est):
-    return NB_PESQ(ref, mix), NB_PESQ(ref, est), STOI(ref, mix), STOI(ref, est)
-
-
 def cart2sph(x, y, z):
     r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
     theta = np.arctan2(y, x)
@@ -113,9 +51,8 @@ def microphone_positions_spherical(cartesian_positions):
     return positions_spherical
 
 
-def wav_generator(mix_path, ref_path, mic_path):
+def wav_generator(mix_path, mic_path):
     mix = audioread(mix_path)
-    ref = audioread(ref_path)
 
     mic_data = np.load(mic_path)  # shape: (C, 3)
     center = np.mean(mic_data, axis=0)
@@ -141,29 +78,7 @@ def wav_generator(mix_path, ref_path, mic_path):
     # 保证 est 是 1 维
     est = np.asarray(est).squeeze()
 
-    # 参考和混合取第 0 通道
-    if len(ref.shape) != 1:
-        ref_eval = ref[:, 0]
-    else:
-        ref_eval = ref
-
-    if len(mix.shape) != 1:
-        mix_eval = mix[:, 0]
-    else:
-        mix_eval = mix
-
-    min_len = min(len(ref_eval), len(mix_eval), len(est))
-    ref_eval = ref_eval[:min_len]
-    mix_eval = mix_eval[:min_len]
-    est = est[:min_len]
-
-    pesq_mix, pesq_est, stoi_mix, stoi_est = calculate_metrics(ref_eval, mix_eval, est)
-    pesq_mix = np.mean(np.array(pesq_mix))
-    pesq_est = np.mean(np.array(pesq_est))
-    stoi_mix = np.mean(np.array(stoi_mix))
-    stoi_est = np.mean(np.array(stoi_est))
-
-    return pesq_mix, pesq_est, stoi_mix, stoi_est, est
+    return est
 
 
 if __name__ == "__main__":
@@ -178,13 +93,14 @@ if __name__ == "__main__":
     _parser.add_argument("--mic_prefix", type=str, default="mic_array_pos")
     _parser.add_argument("--test_name", type=str, default="mic_8")
     _parser.add_argument("--gpus", type=str, default="0")
-    _parser.add_argument("--profile_model", action="store_true", help="打印参数量和 2 秒输入的计算量估计")
+    _parser.add_argument("--prediction_path", type=str, default="", help="增强 wav 保存目录；默认保存到 dataset root 下")
     _parser.add_argument("--enable_order_grouping", action="store_true", help="推理 grouping-only 模型时开启")
     _parser.add_argument("--sh_order", type=int, default=4)
     _parser.add_argument("--order_hidden_dim", type=int, default=None)
     _inf_args = _parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = _inf_args.gpus
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     modelpath = _inf_args.modelpath
 
@@ -198,13 +114,15 @@ if __name__ == "__main__":
     for test_name in test_list:
         test_wav_scp = os.path.join(file_path, 'loader_txt', 'wav_scp', 'wav_scp_test_' + test_name + '.txt')
         wav_path = os.path.join(file_path, 'generated_data', 'test_' + test_name, 'mix')
-        ref_dir = os.path.join(file_path, 'generated_data', 'test_' + test_name, 'noreverb_ref')
         mic_dir = os.path.join(mic_path_root, test_name, 'MIC')
 
         modelname = os.path.join(modelpath, _inf_args.model_name)
 
-        # 和 evaluation_fixed.py 的 prediction_path 保持一致
-        pred_save_dir = os.path.join(file_path, 'predictions_tfg_serial_test_' + test_name)
+        if _inf_args.prediction_path.strip():
+            pred_save_dir = _inf_args.prediction_path
+        else:
+            model_tag = os.path.basename(os.path.normpath(modelpath))
+            pred_save_dir = os.path.join(file_path, f'predictions_{model_tag}_test_{test_name}')
         os.makedirs(pred_save_dir, exist_ok=True)
 
         print(str(modelname))
@@ -254,16 +172,8 @@ if __name__ == "__main__":
         load_network.load_state_dict(state_dict,strict=False)
         load_network = load_network.to(device)
 
-        if torch.cuda.device_count() > 1:
-            load_network = torch.nn.DataParallel(load_network)
-
         load_network.eval()
-        print_model_profile(load_network, profile_model=_inf_args.profile_model)
-
-        pesq_mix_list = []
-        pesq_est_list = []
-        stoi_mix_list = []
-        stoi_est_list = []
+        print("Inference only: enhanced wavs will be saved. Run evaluation_fixed.py for metrics/profile.")
 
         with open(test_wav_scp, 'r', encoding='utf-8') as infile:
             data = infile.readlines()
@@ -276,60 +186,19 @@ if __name__ == "__main__":
                 utt_id_wav = ensure_wav(utt_id)
 
                 mix_path = os.path.join(wav_path, utt_id_wav)
-                ref_path = os.path.join(ref_dir, utt_id_wav)
-
                 mic_path = get_mic_path(mic_dir, mic_prefix, utt_id)
 
                 try:
-                    pesq_mix, pesq_est, stoi_mix, stoi_est, est = wav_generator(mix_path, ref_path, mic_path)
+                    est = wav_generator(mix_path, mic_path)
 
-                    pesq_mix_list.append(pesq_mix)
-                    pesq_est_list.append(pesq_est)
-                    stoi_mix_list.append(stoi_mix)
-                    stoi_est_list.append(stoi_est)
-
-                    # 保存增强后的 wav，文件名与 evaluation_fixed.py 一致
                     est_save_path = os.path.join(pred_save_dir, utt_id_wav)
                     sf.write(est_save_path, est, 16000)
 
                 except Exception as e:
                     print(f'Error utterance: {utt_id}')
                     print(f'mix_path: {mix_path}')
-                    print(f'ref_path: {ref_path}')
                     print(f'mic_path: {mic_path}')
                     print(f'Error info: {e}')
                     continue
 
-        if len(pesq_mix_list) == 0:
-            print(f"{test_name}: no valid samples processed.")
-            continue
-
-        pesq_mix = np.mean(np.array(pesq_mix_list))
-        pesq_est = np.mean(np.array(pesq_est_list))
-        stoi_mix = np.mean(np.array(stoi_mix_list))
-        stoi_est = np.mean(np.array(stoi_est_list))
-
-        print(test_name + "_result:")
-        print(
-            'pesq_mix:' + str(pesq_mix) + '   ' +
-            'pesq_est:' + str(pesq_est) + '   ' +
-            'stoi_mix:' + str(stoi_mix) + '   ' +
-            'stoi_est:' + str(stoi_est)
-        )
-
-        res1path = os.path.join(modelpath, 'result_model_best')
-        if not os.path.isdir(res1path):
-            os.makedirs(res1path)
-
-        io.savemat(
-            os.path.join(res1path, test_name + '_metrics.mat'),
-            {
-                'pesq_mix': pesq_mix,
-                'pesq_est': pesq_est,
-                'stoi_mix': stoi_mix,
-                'stoi_est': stoi_est
-            }
-        )
-
-        print("Saved average metrics to:", os.path.join(res1path, test_name + '_metrics.mat'))
         print("Saved enhanced wavs to:", pred_save_dir)

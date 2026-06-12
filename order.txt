@@ -38,3 +38,15 @@ python -u train.py \
   --model_name model_best.pth \
   --test_name mic_8 \
   --profile_model
+
+  测评指令（grouping-only）
+  CUDA_VISIBLE_DEVICES=0 python -u evaluation_fixed.py \
+  --dataset_root /data/lizhe/SH_data/Mic8_2s_gpurir \
+  --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_grouping_only_mic_8 \
+  --test_name mic_8 \
+  --modelpath model_grouping_only_8mic \
+  --model_name model_best.pth \
+  --enable_order_grouping \
+  --sh_order 4 \
+  --profile_model \
+  --save_dir model_grouping_only_8mic/eval_mic_8
