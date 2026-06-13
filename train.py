@@ -30,7 +30,7 @@ from loader.IGCRN_dataloader import make_fix_loader
 from networks.tfgridnetv2 import TFGridNetV2
 # 地址复用 本地：/data/lizhe/SH_data 服务器：/root/autodl-tmp
 from pathlib import Path
-DATA_ROOT = Path("/data/lizhe/SH_data")
+DATA_ROOT = Path("/root/autodl-tmp/SH_data")
 
 warnings.filterwarnings("ignore")
 

@@ -206,7 +206,7 @@ output shape: (2, 32, 9, 17)
 
 当前实验仍然使用 baseline 的训练设置，只额外开启 order grouping。
 
-推荐训练命令：
+推荐训练命令：这是默认mse的跑法
 
 ```bash
 python -u train.py \
@@ -215,9 +215,25 @@ python -u train.py \
   --sh_order 4 \
   --num_epoch 100 \
   --batch_size 8 \
-  --num_worker 4 \
+  --num_worker 8 \
   --lr 1e-3 \
   --model_dir model_grouping_only_8mic
+```
+
+这是组合loss的跑法
+```bash
+python -u train.py \
+  --gpus 0,1,2,3 \
+  --enable_order_grouping \
+  --sh_order 4 \
+  --loss_type mse_sisdr_stft \
+  --sisdr_weight 0.01 \
+  --stft_weight 0.5 \
+  --num_epoch 100 \
+  --batch_size 8 \
+  --num_worker 4 \
+  --lr 1e-3 \
+  --model_dir model_grouping_only_mse_sisdr_stft_8mic
 ```
 
 如果显存不足，可以先将 batch size 降到 4：
