@@ -21,7 +21,6 @@ events.out.tfevents.*
 # Model checkpoints and experiment outputs
 model_tfg_serial_8mic/
 record/
-*.pth
 *.pt
 *.ckpt
 *.npy
