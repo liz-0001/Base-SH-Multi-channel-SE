@@ -30,6 +30,7 @@ class OrderWiseSHGroupingEncoder(nn.Module):
             emb_dim,
             order_hidden_dim=None,
             sh_order=None,
+            enable_adjacent_interaction=False,
             kernel_size=(3, 3),
             eps=1.0e-5,
     ):
@@ -51,6 +52,7 @@ class OrderWiseSHGroupingEncoder(nn.Module):
         self.sh_order = inferred_order
         self.num_orders = inferred_order + 1
         self.order_hidden_dim = order_hidden_dim or emb_dim
+        self.enable_adjacent_interaction = enable_adjacent_interaction
 
         padding = (kernel_size[0] // 2, kernel_size[1] // 2)
         self.order_slices = [
@@ -68,6 +70,14 @@ class OrderWiseSHGroupingEncoder(nn.Module):
                     nn.PReLU(self.order_hidden_dim),
                 )
             )
+
+        if enable_adjacent_interaction:
+            self.adjacent_interaction = AdjacentOrderInteraction(
+                num_orders=self.num_orders,
+                hidden_dim=self.order_hidden_dim,
+            )
+        else:
+            self.adjacent_interaction = None
 
         self.fuse = nn.Sequential(
             nn.Conv2d(self.num_orders * self.order_hidden_dim, emb_dim, 1),
@@ -96,7 +106,73 @@ class OrderWiseSHGroupingEncoder(nn.Module):
             grouped = torch.cat((real[:, start:end], imag[:, start:end]), dim=1)
             order_features.append(encoder(grouped))
 
+        if self.adjacent_interaction is not None:
+            order_features = self.adjacent_interaction(order_features)
+
         return self.fuse(torch.cat(order_features, dim=1))
+
+
+class AdjacentOrderInteraction(nn.Module):
+    """Lightweight gated residual interaction between adjacent SH orders."""
+
+    def __init__(self, num_orders, hidden_dim):
+        super().__init__()
+        self.num_orders = num_orders
+        self.hidden_dim = hidden_dim
+
+        self.left_gates = nn.ModuleList()
+        self.left_projs = nn.ModuleList()
+        self.right_gates = nn.ModuleList()
+        self.right_projs = nn.ModuleList()
+
+        for order in range(num_orders):
+            if order > 0:
+                self.left_gates.append(
+                    nn.Sequential(
+                        nn.Conv2d(2 * hidden_dim, hidden_dim, 1),
+                        nn.Sigmoid(),
+                    )
+                )
+                self.left_projs.append(nn.Conv2d(hidden_dim, hidden_dim, 1))
+            else:
+                self.left_gates.append(nn.Identity())
+                self.left_projs.append(nn.Identity())
+
+            if order < num_orders - 1:
+                self.right_gates.append(
+                    nn.Sequential(
+                        nn.Conv2d(2 * hidden_dim, hidden_dim, 1),
+                        nn.Sigmoid(),
+                    )
+                )
+                self.right_projs.append(nn.Conv2d(hidden_dim, hidden_dim, 1))
+            else:
+                self.right_gates.append(nn.Identity())
+                self.right_projs.append(nn.Identity())
+
+    def forward(self, order_features):
+        if len(order_features) != self.num_orders:
+            raise ValueError(
+                f"Expected {self.num_orders} order features, got {len(order_features)}."
+            )
+
+        updated_features = []
+        for order, current in enumerate(order_features):
+            updated = current
+
+            if order > 0:
+                left = order_features[order - 1]
+                gate_left = self.left_gates[order](torch.cat((current, left), dim=1))
+                updated = updated + gate_left * self.left_projs[order](left)
+
+            if order < self.num_orders - 1:
+                right = order_features[order + 1]
+                gate_right = self.right_gates[order](torch.cat((current, right), dim=1))
+                updated = updated + gate_right * self.right_projs[order](right)
+
+            updated_features.append(updated)
+
+        return updated_features
 
 
 class TFGridNetV2(AbsSeparator):
@@ -164,6 +240,7 @@ class TFGridNetV2(AbsSeparator):
             enable_order_grouping=False,
             sh_order=None,
             order_hidden_dim=None,
+            enable_adjacent_interaction=False,
     ):
         super().__init__()
         self.n_srcs = n_srcs
@@ -172,6 +249,7 @@ class TFGridNetV2(AbsSeparator):
         self.enable_order_grouping = enable_order_grouping
         self.sh_order = sh_order
         self.order_hidden_dim = order_hidden_dim
+        self.enable_adjacent_interaction = enable_adjacent_interaction
         assert n_fft % 2 == 0
         n_freqs = n_fft // 2 + 1
 
@@ -188,6 +266,7 @@ class TFGridNetV2(AbsSeparator):
                 emb_dim=emb_dim,
                 order_hidden_dim=order_hidden_dim,
                 sh_order=sh_order,
+                enable_adjacent_interaction=enable_adjacent_interaction,
                 kernel_size=ks,
                 eps=eps,
             )

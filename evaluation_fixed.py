@@ -50,6 +50,8 @@ def get_args():
                         help='visible GPU id for model profiling')
     parser.add_argument('--enable_order_grouping', action='store_true',
                         help='use the order-wise SH grouping model frontend')
+    parser.add_argument('--enable_adjacent_interaction', action='store_true',
+                        help='use adjacent-order interaction after order-wise grouping')
     parser.add_argument('--sh_order', type=int,
                         default=4,
                         help='maximum SH order')
@@ -111,6 +113,7 @@ def build_model(args):
         enable_order_grouping=args.enable_order_grouping,
         sh_order=args.sh_order,
         order_hidden_dim=args.order_hidden_dim,
+        enable_adjacent_interaction=args.enable_adjacent_interaction,
     )
 
 
@@ -272,6 +275,9 @@ def safe_metric_compute(clean, mix, est, sr=16000):
 
 if __name__ == "__main__":
     args = get_args()
+    if args.enable_adjacent_interaction and not args.enable_order_grouping:
+        args.enable_order_grouping = True
+
     dataset_root = args.dataset_root
     prediction_path = args.prediction_path
     test_name = args.test_name
@@ -300,6 +306,7 @@ if __name__ == "__main__":
     print("modelpath      :", args.modelpath if args.modelpath.strip() else "<skip profile>")
     print("model_name     :", args.model_name)
     print("order_grouping :", args.enable_order_grouping)
+    print("adjacent_inter :", args.enable_adjacent_interaction)
     print("=======================================")
 
     profile_info = compute_model_profile(args)

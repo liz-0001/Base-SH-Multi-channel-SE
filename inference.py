@@ -95,9 +95,13 @@ if __name__ == "__main__":
     _parser.add_argument("--gpus", type=str, default="0")
     _parser.add_argument("--prediction_path", type=str, default="", help="增强 wav 保存目录；默认保存到 dataset root 下")
     _parser.add_argument("--enable_order_grouping", action="store_true", help="推理 grouping-only 模型时开启")
+    _parser.add_argument("--enable_adjacent_interaction", action="store_true", help="推理 grouping+adjacent 模型时开启")
     _parser.add_argument("--sh_order", type=int, default=4)
     _parser.add_argument("--order_hidden_dim", type=int, default=None)
     _inf_args = _parser.parse_args()
+
+    if _inf_args.enable_adjacent_interaction and not _inf_args.enable_order_grouping:
+        _inf_args.enable_order_grouping = True
 
     os.environ["CUDA_VISIBLE_DEVICES"] = _inf_args.gpus
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -143,8 +147,14 @@ if __name__ == "__main__":
             enable_order_grouping=_inf_args.enable_order_grouping,
             sh_order=_inf_args.sh_order,
             order_hidden_dim=_inf_args.order_hidden_dim,
+            enable_adjacent_interaction=_inf_args.enable_adjacent_interaction,
         )
-        if _inf_args.enable_order_grouping:
+        if _inf_args.enable_order_grouping and _inf_args.enable_adjacent_interaction:
+            print(
+                "Model: TFGridNetV2 serial + order-wise SH grouping + adjacent-order interaction "
+                f"(sh_order={_inf_args.sh_order}, order_hidden_dim={_inf_args.order_hidden_dim or 32})"
+            )
+        elif _inf_args.enable_order_grouping:
             print(
                 "Model: TFGridNetV2 serial + order-wise SH grouping "
                 f"(sh_order={_inf_args.sh_order}, order_hidden_dim={_inf_args.order_hidden_dim or 32})"
