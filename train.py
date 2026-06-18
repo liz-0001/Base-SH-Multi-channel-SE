@@ -144,8 +144,6 @@ parser.add_argument("--channel", type=int, default=8)
 parser.add_argument("--repeat", type=int, default=1)
 parser.add_argument("--chunk", type=int, default=2)
 parser.add_argument("--sample_rate", type=int, default=16000)
-parser.add_argument("--enable_order_grouping", action="store_true", help="开启 order-wise SH grouping 前端")
-parser.add_argument("--enable_adjacent_interaction", action="store_true", help="开启相邻 SH 阶门控残差交互")
 parser.add_argument("--sh_order", type=int, default=4, help="SH 最大阶数；8mic baseline 当前为 4 阶，通道数 25")
 parser.add_argument(
     "--order_hidden_dim",
@@ -163,14 +161,18 @@ parser.add_argument(
 parser.add_argument(
     "--model_dir",
     type=str,
-    default="model_tfg_serial_8mic",
+    default="model_grouping_inter_mse_sisdr_stft_8mic",
     help="模型保存目录"
 )
 
 args = parser.parse_args()
 
-if args.enable_adjacent_interaction and not args.enable_order_grouping:
-    args.enable_order_grouping = True
+# grouping-inter branch: the SH interaction frontend is the default model.
+args.enable_order_grouping = True
+args.enable_high_low_guidance = True
+args.enable_low_to_high = True
+args.enable_high_to_low = True
+args.enable_adjacent_interaction = True
 
 if args.gpus.strip():
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus.strip()
@@ -331,6 +333,9 @@ def log_training_config():
         ("sh_order", str(args.sh_order)),
         ("sh_channels", "25"),
         ("enable_order_grouping", str(args.enable_order_grouping)),
+        ("enable_high_low_guidance", str(args.enable_high_low_guidance)),
+        ("enable_low_to_high", str(args.enable_low_to_high)),
+        ("enable_high_to_low", str(args.enable_high_to_low)),
         ("enable_adjacent_interaction", str(args.enable_adjacent_interaction)),
         ("order_hidden_dim", str(args.order_hidden_dim)),
         ("epochs", str(args.num_epoch)),
@@ -400,6 +405,9 @@ def save_run_config(log_dir, modelpath):
             "model": "TFGridNetV2 serial",
             "n_imics": 25,
             "enable_order_grouping": args.enable_order_grouping,
+            "enable_high_low_guidance": args.enable_high_low_guidance,
+            "enable_low_to_high": args.enable_low_to_high,
+            "enable_high_to_low": args.enable_high_to_low,
             "enable_adjacent_interaction": args.enable_adjacent_interaction,
             "sh_order": args.sh_order,
             "order_hidden_dim": args.order_hidden_dim,
@@ -509,19 +517,15 @@ if __name__ == "__main__":
         sh_order=args.sh_order,
         order_hidden_dim=args.order_hidden_dim,
         enable_adjacent_interaction=args.enable_adjacent_interaction,
+        enable_high_low_guidance=args.enable_high_low_guidance,
+        enable_low_to_high=args.enable_low_to_high,
+        enable_high_to_low=args.enable_high_to_low,
     )
-    if args.enable_order_grouping and args.enable_adjacent_interaction:
-        log_info(
-            "Model: TFGridNetV2 serial + order-wise SH grouping + adjacent-order interaction "
-            f"(sh_order={args.sh_order}, order_hidden_dim={args.order_hidden_dim or 32})"
-        )
-    elif args.enable_order_grouping:
-        log_info(
-            "Model: TFGridNetV2 serial + order-wise SH grouping "
-            f"(sh_order={args.sh_order}, order_hidden_dim={args.order_hidden_dim or 32})"
-        )
-    else:
-        log_info("Baseline model: TFGridNetV2 serial SHC input, no ADFS")
+    log_info(
+        "Model: TFGridNetV2 serial + order-wise SH grouping + high-low mutual guidance "
+        "+ adjacent-order interaction "
+        f"(sh_order={args.sh_order}, order_hidden_dim={args.order_hidden_dim or 32})"
+    )
 
     if torch.cuda.device_count() > 1 and device.type == "cuda":
         log_info(f"Use {torch.cuda.device_count()} GPUs for DataParallel")

@@ -1,272 +1,170 @@
-grouping-adjacent 分支运行指令
-==============================
-
-本文件只记录当前分支实验：
-
-    order-wise SH grouping + adjacent-order interaction
-
-当前实验建议使用联合损失：
-
-    MSE + 0.01 * SI-SDR loss + 0.5 * STFT loss
-
-
-一、训练指令
------------
-
-python -u train.py \
-  --gpus 0,1,2,3 \
-  --enable_order_grouping \
-  --enable_adjacent_interaction \
-  --sh_order 4 \
-  --loss_type mse_sisdr_stft \
-  --sisdr_weight 0.01 \
-  --stft_weight 0.5 \
-  --num_epoch 100 \
-  --batch_size 8 \
-  --num_worker 4 \
-  --lr 1e-3 \
-  --model_dir model_grouping_adjacent_mse_sisdr_stft_8mic
-
-参数说明：
-
-    python -u train.py
-        使用 Python 运行训练脚本。
-        -u 表示不缓存标准输出，训练日志和 tqdm 进度能更及时显示在终端里。
-
-    --gpus 0,1,2,3
-        指定可见 GPU 编号。
-        这里表示使用 0、1、2、3 四张 GPU。
-        train.py 内部会设置 CUDA_VISIBLE_DEVICES，并在多 GPU 时使用 DataParallel。
-
-    --enable_order_grouping
-        开启 order-wise SH grouping。
-        作用是将 SH 通道按照阶数分为 0 阶、1 阶、2 阶、3 阶、4 阶，
-        每一阶先经过独立 encoder，再送入后续模块。
-
-    --enable_adjacent_interaction
-        开启相邻阶交互 adjacent-order interaction。
-        作用是在得到 H_0, H_1, ..., H_N 后，只让相邻阶之间通过门控残差交换信息。
-        例如：
-            H_0 只接收 H_1
-            H_1 接收 H_0 和 H_2
-            H_4 只接收 H_3
-
-    --sh_order 4
-        指定最大 SH 阶数为 4。
-        对应 SH 通道数为：
-            (4 + 1)^2 = 25
-        当前 8mic 实验使用 25 个 SH coefficients。
-
-    --loss_type mse_sisdr_stft
-        指定训练损失为联合 loss。
-        实际形式为：
-            L_total = MSE + sisdr_weight * SI-SDR_loss + stft_weight * STFT_loss
-
-    --sisdr_weight 0.01
-        SI-SDR loss 的权重。
-        当前设置为 0.01，表示 SI-SDR 项作为辅助约束，不作为主导项。
-
-    --stft_weight 0.5
-        STFT loss 的权重。
-        当前设置为 0.5，用于加强频谱幅度结构约束。
-
-    --num_epoch 100
-        训练总轮数为 100 epoch。
-
-    --batch_size 8
-        全局 batch size 为 8。
-        如果显存不足，可以改为 4。
-
-    --num_worker 4
-        DataLoader 的 worker 数量。
-        用于并行读取和处理训练数据。
-
-    --lr 1e-3
-        Adam 优化器初始学习率。
-
-    --model_dir model_grouping_adjacent_mse_sisdr_stft_8mic
-        模型权重、训练配置、epoch 指标和 loss 曲线的保存目录。
-        最优权重默认保存为：
-            model_grouping_adjacent_mse_sisdr_stft_8mic/model_best.pth
-
-
-二、推理指令
------------
-
-CUDA_VISIBLE_DEVICES=0 python -u inference.py \
-  --modelpath model_grouping_adjacent_mse_sisdr_stft_8mic \
-  --model_name model_best.pth \
-  --test_name mic_8 \
-  --mic_prefix mic \
-  --enable_order_grouping \
-  --enable_adjacent_interaction \
-  --sh_order 4 \
-  --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_grouping_adjacent_mic_8
-
-参数说明：
-
-    CUDA_VISIBLE_DEVICES=0
-        推理阶段只使用第 0 张 GPU。
-        推理 batch 通常很小，使用单卡更稳定，也避免 DataParallel 的设备不一致问题。
-
-    python -u inference.py
-        运行推理脚本。
-        当前 inference.py 只负责生成 enhanced wav，不再计算 PESQ/STOI，也不统计参数量。
-        所有正式测评都在 evaluation_fixed.py 中完成。
-
-    --modelpath model_grouping_adjacent_mse_sisdr_stft_8mic
-        指定模型权重所在文件夹。
-        脚本会和 --model_name 拼接，得到最终权重路径。
-
-    --model_name model_best.pth
-        指定要加载的权重文件名。
-        最终读取：
-            model_grouping_adjacent_mse_sisdr_stft_8mic/model_best.pth
-
-    --test_name mic_8
-        指定测试集名称。
-        脚本会读取：
-            /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_test_mic_8.txt
-        并从 test_mic_8 目录中读取 mix 音频。
-
-    --mic_prefix mic
-        指定麦克风位置文件名前缀。
-        当前测试集中的 MIC 文件类似：
-            mic_576_0.7.npy
-        因此前缀使用 mic。
-
-    --enable_order_grouping
-        推理时开启 order-wise SH grouping。
-        必须和训练时的模型结构保持一致。
-
-    --enable_adjacent_interaction
-        推理时开启 adjacent-order interaction。
-        必须和训练时的模型结构保持一致。
-
-    --sh_order 4
-        指定 SH 最大阶数为 4。
-        必须和训练时一致。
-
-    --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_grouping_adjacent_mic_8
-        指定 enhanced wav 的保存目录。
-        推理结果会保存为和测试集同名的 wav 文件。
-        如果目录已经存在，同名 wav 会被覆盖，不同名文件会保留。
-
-
-三、测评指令
------------
-
-CUDA_VISIBLE_DEVICES=0 python -u evaluation_fixed.py \
-  --dataset_root /data/lizhe/SH_data/Mic8_2s_gpurir \
-  --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_grouping_adjacent_mic_8 \
-  --test_name mic_8 \
-  --modelpath model_grouping_adjacent_mse_sisdr_stft_8mic \
-  --model_name model_best.pth \
-  --enable_order_grouping \
-  --enable_adjacent_interaction \
-  --sh_order 4 \
-  --profile_model \
-  --save_dir model_grouping_adjacent_mse_sisdr_stft_8mic/eval_mic_8
-
-参数说明：
-
-    CUDA_VISIBLE_DEVICES=0
-        使用第 0 张 GPU 进行模型参数量和 MACs/FLOPs 统计。
-        音频指标本身主要在 CPU 上计算。
-
-    python -u evaluation_fixed.py
-        运行正式测评脚本。
-        当前测评脚本会统一计算：
-            PESQ
-            STOI
-            SDR
-            SI-SDR
-            improvement
-            parameters
-            MACs/FLOPs
-
-    --dataset_root /data/lizhe/SH_data/Mic8_2s_gpurir
-        数据集根目录。
-        脚本会从这里找到：
-            generated_data/test_mic_8/mix
-            generated_data/test_mic_8/noreverb_ref
-            loader_txt/wav_scp/wav_scp_test_mic_8.txt
-
-    --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_grouping_adjacent_mic_8
-        推理阶段保存 enhanced wav 的目录。
-        测评脚本会将该目录下的 enhanced wav 与 clean reference 对齐计算指标。
-
-    --test_name mic_8
-        指定测试集名称。
-        必须和推理阶段一致。
-
-    --modelpath model_grouping_adjacent_mse_sisdr_stft_8mic
-        指定模型目录，用于加载权重并统计参数量、MACs/FLOPs。
-
-    --model_name model_best.pth
-        指定测评时加载的模型权重文件名。
-        最终读取：
-            model_grouping_adjacent_mse_sisdr_stft_8mic/model_best.pth
-
-    --enable_order_grouping
-        测评时构建模型时开启 order-wise SH grouping。
-        必须和训练时保持一致，否则权重结构不匹配。
-
-    --enable_adjacent_interaction
-        测评时构建模型时开启 adjacent-order interaction。
-        必须和训练时保持一致，否则权重结构不匹配。
-
-    --sh_order 4
-        指定 SH 最大阶数为 4。
-        必须和训练、推理保持一致。
-
-    --profile_model
-        开启模型复杂度统计。
-        会输出：
-            parameters_total
-            parameters_trainable
-            parameters_frozen
-            MACs
-            FLOPs_approx
-            thop_params
-
-    --save_dir model_grouping_adjacent_mse_sisdr_stft_8mic/eval_mic_8
-        指定测评结果保存目录。
-        会保存：
-            mic_8_detail_metrics.csv
-            mic_8_summary_metrics.csv
-            mic_8_metrics.mat
-
-
-四、测评输出说明
----------------
-
-测评脚本会输出：
-
-    PESQ  mix
-        noisy mix 与 clean reference 的 PESQ。
-
-    PESQ  est
-        enhanced wav 与 clean reference 的 PESQ。
-
-    PESQ  imp
-        PESQ_est - PESQ_mix。
-
-    STOI  mix / STOI est / STOI imp
-        同上，对应 STOI。
-
-    SDR mix / SDR est / SDR imp
-        同上，对应 SDR。
-
-    SI-SDR mix / SI-SDR est / SI-SDR imp
-        同上，对应 SI-SDR。
-
-    parameters_total
-        模型总参数量。
-
-    MACs
-        2 秒输入下的乘加操作数估计。
-
-    FLOPs_approx
-        近似 FLOPs，当前按 2 * MACs 估计。
+# grouping-inter 分支运行指令
 
+本分支默认启用以下模块：
+
+```text
+order-wise SH grouping
++ high-low mutual guidance
++ adjacent-order interaction
+```
+
+所以训练、推理、测评命令里不需要再写 `--enable_order_grouping`、`--enable_adjacent_interaction`、`--enable_high_low_guidance` 这类模块开关。
+
+---
+
+## 1. 训练指令
+
+```bash
+python -u train.py   --gpus 0,1,2,3   --loss_type mse_sisdr_stft   --sisdr_weight 0.01   --stft_weight 0.5   --num_epoch 100   --batch_size 8   --num_worker 4   --lr 1e-3   --model_dir model_grouping_inter_mse_sisdr_stft_8mic
+```
+
+### 训练参数解释
+
+`python -u train.py`
+
+启动训练脚本，`-u` 表示不缓存输出，训练日志和进度条会更及时显示在终端。
+
+`--gpus 0,1,2,3`
+
+指定训练使用的 GPU 编号。你的 4 张 2080Ti 可以这样写。如果只想单卡训练，可以写 `--gpus 0`。
+
+`--loss_type mse_sisdr_stft`
+
+使用组合 loss：时域 MSE + SI-SDR loss + STFT 幅度谱 loss。
+
+`--sisdr_weight 0.01`
+
+SI-SDR loss 的权重。这里设置较小，避免 SI-SDR 项压过 MSE 主损失。
+
+`--stft_weight 0.5`
+
+STFT loss 的权重，用来加强频域幅度谱约束。
+
+`--num_epoch 100`
+
+最大训练轮数。代码里有 early stopping，如果验证集长期不提升，会提前停止。
+
+`--batch_size 8`
+
+global batch size。4 张 2080Ti 时可以先用 8；如果显存不够，改成 4。
+
+`--num_worker 4`
+
+DataLoader 读取数据的 worker 数。服务器 CPU 资源足够时可以用 4 或 8。
+
+`--lr 1e-3`
+
+初始学习率。当前训练脚本会根据验证集表现调整学习率。
+
+`--model_dir model_grouping_inter_mse_sisdr_stft_8mic`
+
+模型权重、训练曲线、每轮指标和 `run_config.json` 的保存目录。
+
+---
+
+## 2. 推理指令
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -u inference.py   --modelpath model_grouping_inter_mse_sisdr_stft_8mic   --model_name model_best.pth   --test_name mic_8   --mic_prefix mic   --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_grouping_inter_mic_8
+```
+
+### 推理参数解释
+
+`CUDA_VISIBLE_DEVICES=0`
+
+推理只使用第 0 张 GPU。推理通常单卡即可。
+
+`python -u inference.py`
+
+启动推理脚本，只生成增强后的 wav，不在推理阶段计算 PESQ/STOI/SDR/SI-SDR。
+
+`--modelpath model_grouping_inter_mse_sisdr_stft_8mic`
+
+权重所在目录。
+
+`--model_name model_best.pth`
+
+读取训练过程中验证集最优的权重文件。
+
+`--test_name mic_8`
+
+使用 8 麦测试集，对应数据路径中的 `test_mic_8` 和 `wav_scp_test_mic_8.txt`。
+
+`--mic_prefix mic`
+
+RIR/MIC 文件名前缀。你的测试 MIC 文件是 `mic_160_0.1.npy` 这种格式，所以这里必须写 `mic`。
+
+`--prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_grouping_inter_mic_8`
+
+增强语音输出目录。推理生成的 wav 会保存在这里。
+
+---
+
+## 3. 测评指令
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -u evaluation_fixed.py   --dataset_root /data/lizhe/SH_data/Mic8_2s_gpurir   --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_grouping_inter_mic_8   --test_name mic_8   --modelpath model_grouping_inter_mse_sisdr_stft_8mic   --model_name model_best.pth   --profile_model   --save_dir model_grouping_inter_mse_sisdr_stft_8mic/eval_mic_8
+```
+
+### 测评参数解释
+
+`CUDA_VISIBLE_DEVICES=0`
+
+测评和模型 profile 使用第 0 张 GPU。
+
+`python -u evaluation_fixed.py`
+
+启动统一测评脚本。这个脚本负责计算 PESQ、STOI、SDR、SI-SDR，并可统计参数量和计算量。
+
+`--dataset_root /data/lizhe/SH_data/Mic8_2s_gpurir`
+
+数据集根目录。脚本会从这里找到 mix、clean reference 和 wav_scp。
+
+`--prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_grouping_inter_mic_8`
+
+推理阶段生成的增强语音目录。
+
+`--test_name mic_8`
+
+指定测评 8 麦测试集。
+
+`--modelpath model_grouping_inter_mse_sisdr_stft_8mic`
+
+模型目录，用于读取权重并统计参数量/计算量。
+
+`--model_name model_best.pth`
+
+用于 profile 的权重文件名。
+
+`--profile_model`
+
+开启 MACs/FLOPs 估计。不开这个参数时，只统计音频指标和参数量。
+
+`--save_dir model_grouping_inter_mse_sisdr_stft_8mic/eval_mic_8`
+
+测评结果保存目录。
+
+---
+
+## 4. 测评输出
+
+测评完成后会输出并保存：
+
+```text
+PESQ mix / est / improvement
+STOI mix / est / improvement
+SDR mix / est / improvement
+SI-SDR mix / est / improvement
+parameters_total
+parameters_trainable
+parameters_frozen
+MACs / FLOPs approximate, if --profile_model is enabled
+```
+
+保存文件包括：
+
+```text
+mic_8_detail_metrics.csv
+mic_8_summary_metrics.csv
+mic_8_metrics.mat
+```

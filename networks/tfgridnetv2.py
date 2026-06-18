@@ -30,7 +30,10 @@ class OrderWiseSHGroupingEncoder(nn.Module):
             emb_dim,
             order_hidden_dim=None,
             sh_order=None,
-            enable_adjacent_interaction=False,
+            enable_adjacent_interaction=True,
+            enable_high_low_guidance=True,
+            enable_low_to_high=True,
+            enable_high_to_low=True,
             kernel_size=(3, 3),
             eps=1.0e-5,
     ):
@@ -53,6 +56,9 @@ class OrderWiseSHGroupingEncoder(nn.Module):
         self.num_orders = inferred_order + 1
         self.order_hidden_dim = order_hidden_dim or emb_dim
         self.enable_adjacent_interaction = enable_adjacent_interaction
+        self.enable_high_low_guidance = enable_high_low_guidance
+        self.enable_low_to_high = enable_low_to_high
+        self.enable_high_to_low = enable_high_to_low
 
         padding = (kernel_size[0] // 2, kernel_size[1] // 2)
         self.order_slices = [
@@ -70,6 +76,17 @@ class OrderWiseSHGroupingEncoder(nn.Module):
                     nn.PReLU(self.order_hidden_dim),
                 )
             )
+
+        if enable_high_low_guidance and self.num_orders > 2:
+            self.high_low_guidance = HighLowMutualGuidance(
+                num_orders=self.num_orders,
+                hidden_dim=self.order_hidden_dim,
+                enable_low_to_high=enable_low_to_high,
+                enable_high_to_low=enable_high_to_low,
+                eps=eps,
+            )
+        else:
+            self.high_low_guidance = None
 
         if enable_adjacent_interaction:
             self.adjacent_interaction = AdjacentOrderInteraction(
@@ -106,10 +123,113 @@ class OrderWiseSHGroupingEncoder(nn.Module):
             grouped = torch.cat((real[:, start:end], imag[:, start:end]), dim=1)
             order_features.append(encoder(grouped))
 
+        if self.high_low_guidance is not None:
+            order_features = self.high_low_guidance(order_features)
+
         if self.adjacent_interaction is not None:
             order_features = self.adjacent_interaction(order_features)
 
         return self.fuse(torch.cat(order_features, dim=1))
+
+
+class HighLowMutualGuidance(nn.Module):
+    """Bidirectional guidance between low-order and high-order SH features.
+
+    Low orders default to order 0 and order 1. High orders are order 2..N.
+    All inputs and outputs keep shape [B, hidden_dim, T, F] per order.
+    """
+
+    def __init__(
+            self,
+            num_orders,
+            hidden_dim,
+            enable_low_to_high=True,
+            enable_high_to_low=True,
+            low_orders=(0, 1),
+            eps=1.0e-5,
+    ):
+        super().__init__()
+        self.num_orders = num_orders
+        self.hidden_dim = hidden_dim
+        self.enable_low_to_high = enable_low_to_high
+        self.enable_high_to_low = enable_high_to_low
+        self.low_orders = [order for order in low_orders if order < num_orders]
+        self.high_orders = [order for order in range(num_orders) if order not in self.low_orders]
+        self.is_active = bool(self.low_orders and self.high_orders)
+
+        if not self.is_active:
+            self.low_fuse = None
+            self.high_fuse = None
+            self.low_to_high_gates = nn.ModuleList([nn.Identity() for _ in range(num_orders)])
+            self.high_to_low_gates = nn.ModuleList([nn.Identity() for _ in range(num_orders)])
+            self.high_to_low_projs = nn.ModuleList([nn.Identity() for _ in range(num_orders)])
+            return
+
+        self.low_fuse = nn.Sequential(
+            nn.Conv2d(len(self.low_orders) * hidden_dim, hidden_dim, 1),
+            nn.GroupNorm(1, hidden_dim, eps=eps),
+            nn.PReLU(hidden_dim),
+        )
+        self.high_fuse = nn.Sequential(
+            nn.Conv2d(len(self.high_orders) * hidden_dim, hidden_dim, 1),
+            nn.GroupNorm(1, hidden_dim, eps=eps),
+            nn.PReLU(hidden_dim),
+        )
+
+        self.low_to_high_gates = nn.ModuleList()
+        self.high_to_low_gates = nn.ModuleList()
+        self.high_to_low_projs = nn.ModuleList()
+        for order in range(num_orders):
+            if order in self.high_orders:
+                self.low_to_high_gates.append(
+                    nn.Sequential(
+                        nn.Conv2d(hidden_dim, hidden_dim, 1),
+                        nn.Sigmoid(),
+                    )
+                )
+            else:
+                self.low_to_high_gates.append(nn.Identity())
+
+            if order in self.low_orders:
+                self.high_to_low_gates.append(
+                    nn.Sequential(
+                        nn.Conv2d(hidden_dim, hidden_dim, 1),
+                        nn.Sigmoid(),
+                    )
+                )
+                self.high_to_low_projs.append(nn.Conv2d(hidden_dim, hidden_dim, 1))
+            else:
+                self.high_to_low_gates.append(nn.Identity())
+                self.high_to_low_projs.append(nn.Identity())
+
+    def forward(self, order_features):
+        if len(order_features) != self.num_orders:
+            raise ValueError(
+                f"Expected {self.num_orders} order features, got {len(order_features)}."
+            )
+        if not self.is_active:
+            return order_features
+
+        updated_features = list(order_features)
+        low_context = self.low_fuse(
+            torch.cat([order_features[order] for order in self.low_orders], dim=1)
+        )
+        high_context = self.high_fuse(
+            torch.cat([order_features[order] for order in self.high_orders], dim=1)
+        )
+
+        if self.enable_low_to_high:
+            for order in self.high_orders:
+                gate = self.low_to_high_gates[order](low_context)
+                updated_features[order] = updated_features[order] + updated_features[order] * gate
+
+        if self.enable_high_to_low:
+            for order in self.low_orders:
+                gate = self.high_to_low_gates[order](high_context)
+                delta = self.high_to_low_projs[order](high_context)
+                updated_features[order] = updated_features[order] + gate * delta
+
+        return updated_features
 
 
 class AdjacentOrderInteraction(nn.Module):
@@ -237,10 +357,13 @@ class TFGridNetV2(AbsSeparator):
             activation="prelu",
             eps=1.0e-5,
             use_builtin_complex=False,
-            enable_order_grouping=False,
+            enable_order_grouping=True,
             sh_order=None,
             order_hidden_dim=None,
-            enable_adjacent_interaction=False,
+            enable_adjacent_interaction=True,
+            enable_high_low_guidance=True,
+            enable_low_to_high=True,
+            enable_high_to_low=True,
     ):
         super().__init__()
         self.n_srcs = n_srcs
@@ -250,6 +373,9 @@ class TFGridNetV2(AbsSeparator):
         self.sh_order = sh_order
         self.order_hidden_dim = order_hidden_dim
         self.enable_adjacent_interaction = enable_adjacent_interaction
+        self.enable_high_low_guidance = enable_high_low_guidance
+        self.enable_low_to_high = enable_low_to_high
+        self.enable_high_to_low = enable_high_to_low
         assert n_fft % 2 == 0
         n_freqs = n_fft // 2 + 1
 
@@ -267,6 +393,9 @@ class TFGridNetV2(AbsSeparator):
                 order_hidden_dim=order_hidden_dim,
                 sh_order=sh_order,
                 enable_adjacent_interaction=enable_adjacent_interaction,
+                enable_high_low_guidance=enable_high_low_guidance,
+                enable_low_to_high=enable_low_to_high,
+                enable_high_to_low=enable_high_to_low,
                 kernel_size=ks,
                 eps=eps,
             )

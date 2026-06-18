@@ -84,8 +84,8 @@ def wav_generator(mix_path, mic_path):
 if __name__ == "__main__":
     import argparse as _argparse
     _parser = _argparse.ArgumentParser("TFG inference")
-    _parser.add_argument("--modelpath", type=str, default="model_tfg_serial_8mic",
-                         help="模型目录，默认使用 8 麦串行 TFG baseline")
+    _parser.add_argument("--modelpath", type=str, default="model_grouping_inter_mse_sisdr_stft_8mic",
+                         help="模型目录，默认使用 grouping-inter 模型")
     _parser.add_argument("--model_name", type=str, default="model_best.pth")
     _parser.add_argument("--file_path", type=str, default="/data/lizhe/SH_data/Mic8_2s_gpurir")
     _parser.add_argument("--mic_path_root", type=str,
@@ -94,14 +94,16 @@ if __name__ == "__main__":
     _parser.add_argument("--test_name", type=str, default="mic_8")
     _parser.add_argument("--gpus", type=str, default="0")
     _parser.add_argument("--prediction_path", type=str, default="", help="增强 wav 保存目录；默认保存到 dataset root 下")
-    _parser.add_argument("--enable_order_grouping", action="store_true", help="推理 grouping-only 模型时开启")
-    _parser.add_argument("--enable_adjacent_interaction", action="store_true", help="推理 grouping+adjacent 模型时开启")
     _parser.add_argument("--sh_order", type=int, default=4)
     _parser.add_argument("--order_hidden_dim", type=int, default=None)
     _inf_args = _parser.parse_args()
 
-    if _inf_args.enable_adjacent_interaction and not _inf_args.enable_order_grouping:
-        _inf_args.enable_order_grouping = True
+    # grouping-inter branch: always use grouping + high-low guidance + adjacent interaction.
+    _inf_args.enable_order_grouping = True
+    _inf_args.enable_high_low_guidance = True
+    _inf_args.enable_low_to_high = True
+    _inf_args.enable_high_to_low = True
+    _inf_args.enable_adjacent_interaction = True
 
     os.environ["CUDA_VISIBLE_DEVICES"] = _inf_args.gpus
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -148,19 +150,15 @@ if __name__ == "__main__":
             sh_order=_inf_args.sh_order,
             order_hidden_dim=_inf_args.order_hidden_dim,
             enable_adjacent_interaction=_inf_args.enable_adjacent_interaction,
+            enable_high_low_guidance=_inf_args.enable_high_low_guidance,
+            enable_low_to_high=_inf_args.enable_low_to_high,
+            enable_high_to_low=_inf_args.enable_high_to_low,
         )
-        if _inf_args.enable_order_grouping and _inf_args.enable_adjacent_interaction:
-            print(
-                "Model: TFGridNetV2 serial + order-wise SH grouping + adjacent-order interaction "
-                f"(sh_order={_inf_args.sh_order}, order_hidden_dim={_inf_args.order_hidden_dim or 32})"
-            )
-        elif _inf_args.enable_order_grouping:
-            print(
-                "Model: TFGridNetV2 serial + order-wise SH grouping "
-                f"(sh_order={_inf_args.sh_order}, order_hidden_dim={_inf_args.order_hidden_dim or 32})"
-            )
-        else:
-            print("Baseline model: TFGridNetV2 serial SHC input, no ADFS")
+        print(
+            "Model: TFGridNetV2 serial + order-wise SH grouping + high-low mutual guidance "
+            "+ adjacent-order interaction "
+            f"(sh_order={_inf_args.sh_order}, order_hidden_dim={_inf_args.order_hidden_dim or 32})"
+        )
 
         state_dict = torch.load(modelname, map_location='cpu')
 
