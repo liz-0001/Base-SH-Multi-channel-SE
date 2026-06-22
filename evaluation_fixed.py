@@ -274,7 +274,7 @@ def safe_metric_compute(clean, mix, est, sr=16000):
 
 if __name__ == "__main__":
     args = get_args()
-    # grouping-inter branch: always profile the full SH interaction frontend.
+    # grouping-inter-sds branch: always profile the full SH interaction frontend.
     args.enable_order_grouping = True
     args.enable_high_low_guidance = True
     args.enable_low_to_high = True

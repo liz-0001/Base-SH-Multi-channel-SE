@@ -26,7 +26,7 @@ def main():
         emb_dim=emb_dim,
         sh_order=sh_order,
     )
-    inter_module = OrderWiseSHGroupingEncoder(
+    sds_inter_module = OrderWiseSHGroupingEncoder(
         n_imics=n_imics,
         emb_dim=emb_dim,
         sh_order=sh_order,
@@ -35,14 +35,14 @@ def main():
     )
     x = torch.randn(batch_size, 2 * n_imics, n_frames, n_freqs)
     y = module(x)
-    y_inter = inter_module(x)
+    y_sds_inter = sds_inter_module(x)
 
     expected_widths = [1, 3, 5, 7]
     actual_widths = [end - start for start, end in module.order_slices]
 
     assert actual_widths == expected_widths, actual_widths
     assert y.shape == (batch_size, emb_dim, n_frames, n_freqs), y.shape
-    assert y_inter.shape == (batch_size, emb_dim, n_frames, n_freqs), y_inter.shape
+    assert y_sds_inter.shape == (batch_size, emb_dim, n_frames, n_freqs), y_sds_inter.shape
 
     hidden_dim = 16
     order_features = [
@@ -54,6 +54,7 @@ def main():
     assert len(guided_features) == len(order_features)
     for before, after in zip(order_features, guided_features):
         assert after.shape == before.shape, (before.shape, after.shape)
+    assert len(guidance.cross_update_scale) == len(order_features)
 
     adjacent = AdjacentOrderInteraction(num_orders=len(order_features), hidden_dim=hidden_dim)
     updated_features = adjacent(guided_features)
@@ -65,7 +66,7 @@ def main():
     print(f"order widths: {actual_widths}")
     print(f"input shape : {tuple(x.shape)}")
     print(f"output shape: {tuple(y.shape)}")
-    print(f"inter output shape: {tuple(y_inter.shape)}")
+    print(f"adfs-style inter output shape: {tuple(y_sds_inter.shape)}")
 
 
 if __name__ == "__main__":

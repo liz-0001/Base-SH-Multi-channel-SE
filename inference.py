@@ -84,8 +84,8 @@ def wav_generator(mix_path, mic_path):
 if __name__ == "__main__":
     import argparse as _argparse
     _parser = _argparse.ArgumentParser("TFG inference")
-    _parser.add_argument("--modelpath", type=str, default="model_grouping_inter_mse_sisdr_stft_8mic",
-                         help="模型目录，默认使用 grouping-inter 模型")
+    _parser.add_argument("--modelpath", type=str, default="model_grouping_inter_adfs_mse_sisdr_stft_8mic",
+                         help="模型目录，默认使用 grouping-inter-sds ADFS-style 模型")
     _parser.add_argument("--model_name", type=str, default="model_best.pth")
     _parser.add_argument("--file_path", type=str, default="/data/lizhe/SH_data/Mic8_2s_gpurir")
     _parser.add_argument("--mic_path_root", type=str,
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     _parser.add_argument("--order_hidden_dim", type=int, default=None)
     _inf_args = _parser.parse_args()
 
-    # grouping-inter branch: always use grouping + high-low guidance + adjacent interaction.
+    # grouping-inter-sds branch: always use grouping + high-low guidance + adjacent interaction.
     _inf_args.enable_order_grouping = True
     _inf_args.enable_high_low_guidance = True
     _inf_args.enable_low_to_high = True
@@ -155,7 +155,7 @@ if __name__ == "__main__":
             enable_high_to_low=_inf_args.enable_high_to_low,
         )
         print(
-            "Model: TFGridNetV2 serial + order-wise SH grouping + high-low mutual guidance "
+            "Model: TFGridNetV2 serial + order-wise SH grouping + ADFS-style high-low correlation guidance "
             "+ adjacent-order interaction "
             f"(sh_order={_inf_args.sh_order}, order_hidden_dim={_inf_args.order_hidden_dim or 32})"
         )

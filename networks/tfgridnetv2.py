@@ -133,10 +133,12 @@ class OrderWiseSHGroupingEncoder(nn.Module):
 
 
 class HighLowMutualGuidance(nn.Module):
-    """Bidirectional guidance between low-order and high-order SH features.
+    """ADSF-style adaptive correlation guidance between low/high SH orders.
 
     Low orders default to order 0 and order 1. High orders are order 2..N.
-    All inputs and outputs keep shape [B, hidden_dim, T, F] per order.
+    The module works in the shared hidden feature space for engineering
+    stability, but builds a full [C, C] low/high channel-correlation matrix
+    instead of only same-channel correlation.
     """
 
     def __init__(
@@ -160,9 +162,18 @@ class HighLowMutualGuidance(nn.Module):
         if not self.is_active:
             self.low_fuse = None
             self.high_fuse = None
+            self.low_descriptor = nn.Identity()
+            self.high_descriptor = nn.Identity()
+            self.low_weight_refine = nn.Identity()
+            self.high_weight_refine = nn.Identity()
             self.low_to_high_gates = nn.ModuleList([nn.Identity() for _ in range(num_orders)])
+            self.low_to_high_projs = nn.ModuleList([nn.Identity() for _ in range(num_orders)])
             self.high_to_low_gates = nn.ModuleList([nn.Identity() for _ in range(num_orders)])
             self.high_to_low_projs = nn.ModuleList([nn.Identity() for _ in range(num_orders)])
+            self.cross_update_scale = nn.ParameterList(
+                [nn.Parameter(torch.zeros(1)) for _ in range(num_orders)]
+            )
+            self.fusion_factor = nn.Parameter(torch.zeros(1))
             return
 
         self.low_fuse = nn.Sequential(
@@ -176,10 +187,33 @@ class HighLowMutualGuidance(nn.Module):
             nn.PReLU(hidden_dim),
         )
 
+        self.low_descriptor = nn.Sequential(
+            nn.Conv2d(hidden_dim, hidden_dim, 1),
+            nn.PReLU(hidden_dim),
+        )
+        self.high_descriptor = nn.Sequential(
+            nn.Conv2d(hidden_dim, hidden_dim, 1),
+            nn.PReLU(hidden_dim),
+        )
+        self.low_weight_refine = nn.Sequential(
+            nn.Conv2d(hidden_dim, hidden_dim, 1),
+            nn.Sigmoid(),
+        )
+        self.high_weight_refine = nn.Sequential(
+            nn.Conv2d(hidden_dim, hidden_dim, 1),
+            nn.Sigmoid(),
+        )
+        self.fusion_factor = nn.Parameter(torch.zeros(1))
+
         self.low_to_high_gates = nn.ModuleList()
+        self.low_to_high_projs = nn.ModuleList()
         self.high_to_low_gates = nn.ModuleList()
         self.high_to_low_projs = nn.ModuleList()
+        self.cross_update_scale = nn.ParameterList()
+
         for order in range(num_orders):
+            self.cross_update_scale.append(nn.Parameter(torch.zeros(1)))
+
             if order in self.high_orders:
                 self.low_to_high_gates.append(
                     nn.Sequential(
@@ -187,8 +221,10 @@ class HighLowMutualGuidance(nn.Module):
                         nn.Sigmoid(),
                     )
                 )
+                self.low_to_high_projs.append(nn.Conv2d(hidden_dim, hidden_dim, 1))
             else:
                 self.low_to_high_gates.append(nn.Identity())
+                self.low_to_high_projs.append(nn.Identity())
 
             if order in self.low_orders:
                 self.high_to_low_gates.append(
@@ -218,19 +254,41 @@ class HighLowMutualGuidance(nn.Module):
             torch.cat([order_features[order] for order in self.high_orders], dim=1)
         )
 
+        low_desc = self.low_descriptor(F.adaptive_avg_pool2d(low_context, 1)).flatten(1)
+        high_desc = self.high_descriptor(F.adaptive_avg_pool2d(high_context, 1)).flatten(1)
+
+        # Full ADSF-style cross-channel correlation: [B, C_low, C_high].
+        corr = torch.matmul(low_desc.unsqueeze(2), high_desc.unsqueeze(1))
+        low_weight = corr.sum(dim=2).unsqueeze(-1).unsqueeze(-1)
+        high_weight = corr.sum(dim=1).unsqueeze(-1).unsqueeze(-1)
+
+        beta = torch.sigmoid(self.fusion_factor)
+        low_gate_base = self.low_weight_refine(
+            beta * torch.sigmoid(low_weight) + (1.0 - beta) * torch.sigmoid(high_weight)
+        )
+        high_gate_base = self.high_weight_refine(
+            beta * torch.sigmoid(high_weight) + (1.0 - beta) * torch.sigmoid(low_weight)
+        )
+
         if self.enable_low_to_high:
             for order in self.high_orders:
-                gate = self.low_to_high_gates[order](low_context)
-                updated_features[order] = updated_features[order] + updated_features[order] * gate
+                gate = self.low_to_high_gates[order](high_gate_base)
+                delta = self.low_to_high_projs[order](low_context)
+                updated_features[order] = (
+                    updated_features[order]
+                    + self.cross_update_scale[order] * gate * delta
+                )
 
         if self.enable_high_to_low:
             for order in self.low_orders:
-                gate = self.high_to_low_gates[order](high_context)
+                gate = self.high_to_low_gates[order](low_gate_base)
                 delta = self.high_to_low_projs[order](high_context)
-                updated_features[order] = updated_features[order] + gate * delta
+                updated_features[order] = (
+                    updated_features[order]
+                    + self.cross_update_scale[order] * gate * delta
+                )
 
         return updated_features
-
 
 class AdjacentOrderInteraction(nn.Module):
     """Lightweight gated residual interaction between adjacent SH orders."""
