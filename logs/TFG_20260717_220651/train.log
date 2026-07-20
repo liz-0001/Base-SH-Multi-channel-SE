@@ -1,0 +1,195 @@
+2026-07-17 22:06:51 | INFO | Log file: logs/TFG_20260717_220651/train.log
+2026-07-17 22:06:51 | INFO | Training start
+2026-07-17 22:06:51 | INFO | Using device: cuda
+2026-07-17 22:06:51 | INFO | ========== Training Config ==========
+2026-07-17 22:06:51 | INFO | CUDA_VISIBLE_DEVICES  : 0,1,2,3
+2026-07-17 22:06:51 | INFO | cuda_available        : True
+2026-07-17 22:06:51 | INFO | visible_gpu_count     : 1
+2026-07-17 22:06:51 | INFO | model                 : TFGridNetV2 serial
+2026-07-17 22:06:51 | INFO | mic                   : 8
+2026-07-17 22:06:51 | INFO | sh_order              : 4
+2026-07-17 22:06:51 | INFO | sh_channels           : 25
+2026-07-17 22:06:51 | INFO | enable_order_grouping : True
+2026-07-17 22:06:51 | INFO | enable_high_low_guidance: True
+2026-07-17 22:06:51 | INFO | enable_low_to_high    : True
+2026-07-17 22:06:51 | INFO | enable_high_to_low    : True
+2026-07-17 22:06:51 | INFO | enable_adjacent_interaction: True
+2026-07-17 22:06:51 | INFO | order_hidden_dim      : None
+2026-07-17 22:06:51 | INFO | epochs                : 100
+2026-07-17 22:06:51 | INFO | batch_size            : 8
+2026-07-17 22:06:51 | INFO | num_worker            : 8
+2026-07-17 22:06:51 | INFO | lr                    : 0.001
+2026-07-17 22:06:51 | INFO | fft_len               : 512
+2026-07-17 22:06:51 | INFO | stride                : 256
+2026-07-17 22:06:51 | INFO | chunk_seconds         : 2
+2026-07-17 22:06:51 | INFO | sample_rate           : 16000
+2026-07-17 22:06:51 | INFO | optimizer             : Adam
+2026-07-17 22:06:51 | INFO | loss_type             : mse_sisdr_stft
+2026-07-17 22:06:51 | INFO | sisdr_weight          : 0.01
+2026-07-17 22:06:51 | INFO | stft_weight           : 0.5
+2026-07-17 22:06:51 | INFO | stft_loss_fft         : 512
+2026-07-17 22:06:51 | INFO | stft_loss_hop         : 256
+2026-07-17 22:06:51 | INFO | model_dir             : model_grouping_inter_adfs_mse_sisdr_stft_8mic
+2026-07-17 22:06:51 | INFO | gpu_0                 : NVIDIA GeForce RTX 5090 | 31.4 GB
+2026-07-17 22:06:51 | INFO | ---------- Data Paths ----------
+2026-07-17 22:06:51 | INFO | train_wav_scp         : /root/autodl-tmp/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt
+2026-07-17 22:06:51 | INFO | train_mix_dir         : /root/autodl-tmp/SH_data/Mic8_2s_gpurir/generated_data/train/mix
+2026-07-17 22:06:51 | INFO | train_ref_dir         : /root/autodl-tmp/SH_data/Mic8_2s_gpurir/generated_data/train/noreverb_ref
+2026-07-17 22:06:51 | INFO | train_mic_dir         : /root/autodl-tmp/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC
+2026-07-17 22:06:51 | INFO | val_wav_scp           : /root/autodl-tmp/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt
+2026-07-17 22:06:51 | INFO | val_mix_dir           : /root/autodl-tmp/SH_data/Mic8_2s_gpurir/generated_data/val/mix
+2026-07-17 22:06:51 | INFO | val_ref_dir           : /root/autodl-tmp/SH_data/Mic8_2s_gpurir/generated_data/val/noreverb_ref
+2026-07-17 22:06:51 | INFO | val_mic_dir           : /root/autodl-tmp/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC
+2026-07-17 22:06:51 | INFO | =====================================
+2026-07-17 22:06:51 | INFO | Model: TFGridNetV2 serial + order-wise SH grouping + ADFS-style high-low correlation guidance + adjacent-order interaction (sh_order=4, order_hidden_dim=32)
+2026-07-17 22:06:51 | INFO | Trainable parameters: 1,966,679
+2026-07-17 22:06:52 | INFO | Loss function: mse_sisdr_stft | sisdr_weight=0.01 | stft_weight=0.5
+2026-07-17 22:06:52 | INFO | Model save dir: model_grouping_inter_adfs_mse_sisdr_stft_8mic
+2026-07-17 22:06:52 | INFO | Run config saved to: logs/TFG_20260717_220651/run_config.json
+2026-07-17 22:06:52 | INFO | Run config saved to: model_grouping_inter_adfs_mse_sisdr_stft_8mic/run_config.json
+2026-07-17 22:06:52 | INFO | ========== Dataset Summary ==========
+2026-07-17 22:06:52 | INFO | train utterances=42367 | train batches=5296
+2026-07-17 22:06:52 | INFO | val utterances=4837 | val batches=605
+2026-07-17 22:06:52 | INFO | =====================================
+2026-07-17 22:06:52 | INFO | Epoch 1/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-17 23:40:53 | INFO | Epoch 1/100 | Train done | train_loss=-0.011148 | time=94.01 min | steps=5296
+2026-07-17 23:40:53 | INFO | Epoch 1/100 | Val start   | batches=605
+2026-07-17 23:44:25 | INFO | Epoch 1/100 | Val done   | val_loss=-0.027598 | time=3.54 min | steps=605
+2026-07-17 23:44:25 | INFO | Epoch 1/100 | lr=0.00100000 | best_val=-0.027598 | saved=model_best.pth
+2026-07-17 23:44:26 | INFO | Epoch 2/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 01:22:52 | INFO | Epoch 2/100 | Train done | train_loss=-0.040112 | time=98.43 min | steps=5296
+2026-07-18 01:22:52 | INFO | Epoch 2/100 | Val start   | batches=605
+2026-07-18 01:27:09 | INFO | Epoch 2/100 | Val done   | val_loss=-0.041824 | time=4.29 min | steps=605
+2026-07-18 01:27:09 | INFO | Epoch 2/100 | lr=0.00100000 | best_val=-0.041824 | saved=model_best.pth
+2026-07-18 01:27:09 | INFO | Epoch 3/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 03:13:30 | INFO | Epoch 3/100 | Train done | train_loss=-0.050218 | time=106.35 min | steps=5296
+2026-07-18 03:13:30 | INFO | Epoch 3/100 | Val start   | batches=605
+2026-07-18 03:17:48 | INFO | Epoch 3/100 | Val done   | val_loss=-0.049229 | time=4.31 min | steps=605
+2026-07-18 03:17:48 | INFO | Epoch 3/100 | lr=0.00100000 | best_val=-0.049229 | saved=model_best.pth
+2026-07-18 03:17:49 | INFO | Epoch 4/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 05:04:01 | INFO | Epoch 4/100 | Train done | train_loss=-0.056805 | time=106.21 min | steps=5296
+2026-07-18 05:04:01 | INFO | Epoch 4/100 | Val start   | batches=605
+2026-07-18 05:08:23 | INFO | Epoch 4/100 | Val done   | val_loss=-0.054384 | time=4.35 min | steps=605
+2026-07-18 05:08:23 | INFO | Epoch 4/100 | lr=0.00100000 | best_val=-0.054384 | saved=model_best.pth
+2026-07-18 05:08:23 | INFO | Epoch 5/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 06:52:58 | INFO | Epoch 5/100 | Train done | train_loss=-0.062033 | time=104.59 min | steps=5296
+2026-07-18 06:52:58 | INFO | Epoch 5/100 | Val start   | batches=605
+2026-07-18 06:57:14 | INFO | Epoch 5/100 | Val done   | val_loss=-0.059769 | time=4.27 min | steps=605
+2026-07-18 06:57:15 | INFO | Epoch 5/100 | lr=0.00100000 | best_val=-0.059769 | saved=model_best.pth
+2026-07-18 06:57:15 | INFO | Epoch 6/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 08:40:57 | INFO | Epoch 6/100 | Train done | train_loss=-0.065654 | time=103.70 min | steps=5296
+2026-07-18 08:40:57 | INFO | Epoch 6/100 | Val start   | batches=605
+2026-07-18 08:44:34 | INFO | Epoch 6/100 | Val done   | val_loss=-0.062602 | time=3.63 min | steps=605
+2026-07-18 08:44:35 | INFO | Epoch 6/100 | lr=0.00100000 | best_val=-0.062602 | saved=model_best.pth
+2026-07-18 08:44:35 | INFO | Epoch 7/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 10:18:52 | INFO | Epoch 7/100 | Train done | train_loss=-0.069039 | time=94.28 min | steps=5296
+2026-07-18 10:18:52 | INFO | Epoch 7/100 | Val start   | batches=605
+2026-07-18 10:22:35 | INFO | Epoch 7/100 | Val done   | val_loss=-0.065506 | time=3.72 min | steps=605
+2026-07-18 10:22:35 | INFO | Epoch 7/100 | lr=0.00100000 | best_val=-0.065506 | saved=model_best.pth
+2026-07-18 10:22:35 | INFO | Epoch 8/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 11:57:35 | INFO | Epoch 8/100 | Train done | train_loss=-0.071314 | time=95.00 min | steps=5296
+2026-07-18 11:57:35 | INFO | Epoch 8/100 | Val start   | batches=605
+2026-07-18 12:01:38 | INFO | Epoch 8/100 | Val done   | val_loss=-0.067265 | time=4.05 min | steps=605
+2026-07-18 12:01:38 | INFO | Epoch 8/100 | lr=0.00100000 | best_val=-0.067265 | saved=model_best.pth
+2026-07-18 12:01:38 | INFO | Epoch 9/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 13:36:32 | INFO | Epoch 9/100 | Train done | train_loss=-0.073710 | time=94.90 min | steps=5296
+2026-07-18 13:36:32 | INFO | Epoch 9/100 | Val start   | batches=605
+2026-07-18 13:40:19 | INFO | Epoch 9/100 | Val done   | val_loss=-0.069043 | time=3.78 min | steps=605
+2026-07-18 13:40:19 | INFO | Epoch 9/100 | lr=0.00100000 | best_val=-0.069043 | saved=model_best.pth
+2026-07-18 13:40:19 | INFO | Epoch 10/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 15:15:03 | INFO | Epoch 10/100 | Train done | train_loss=-0.075248 | time=94.73 min | steps=5296
+2026-07-18 15:15:03 | INFO | Epoch 10/100 | Val start   | batches=605
+2026-07-18 15:18:44 | INFO | Epoch 10/100 | Val done   | val_loss=-0.070022 | time=3.69 min | steps=605
+2026-07-18 15:18:44 | INFO | Epoch 10/100 | lr=0.00100000 | best_val=-0.070022 | saved=model_best.pth
+2026-07-18 15:18:45 | INFO | Epoch 11/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 16:54:37 | INFO | Epoch 11/100 | Train done | train_loss=-0.077263 | time=95.87 min | steps=5296
+2026-07-18 16:54:37 | INFO | Epoch 11/100 | Val start   | batches=605
+2026-07-18 16:58:22 | INFO | Epoch 11/100 | Val done   | val_loss=-0.071500 | time=3.75 min | steps=605
+2026-07-18 16:58:22 | INFO | Epoch 11/100 | lr=0.00100000 | best_val=-0.071500 | saved=model_best.pth
+2026-07-18 16:58:22 | INFO | Epoch 12/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 18:33:28 | INFO | Epoch 12/100 | Train done | train_loss=-0.078987 | time=95.09 min | steps=5296
+2026-07-18 18:33:28 | INFO | Epoch 12/100 | Val start   | batches=605
+2026-07-18 18:37:07 | INFO | Epoch 12/100 | Val done   | val_loss=-0.073292 | time=3.66 min | steps=605
+2026-07-18 18:37:07 | INFO | Epoch 12/100 | lr=0.00100000 | best_val=-0.073292 | saved=model_best.pth
+2026-07-18 18:37:08 | INFO | Epoch 13/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 20:12:29 | INFO | Epoch 13/100 | Train done | train_loss=-0.080422 | time=95.36 min | steps=5296
+2026-07-18 20:12:29 | INFO | Epoch 13/100 | Val start   | batches=605
+2026-07-18 20:16:11 | INFO | Epoch 13/100 | Val done   | val_loss=-0.073536 | time=3.70 min | steps=605
+2026-07-18 20:16:11 | INFO | Epoch 13/100 | lr=0.00100000 | best_val=-0.073536 | saved=model_best.pth
+2026-07-18 20:16:11 | INFO | Epoch 14/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 21:49:44 | INFO | Epoch 14/100 | Train done | train_loss=-0.081270 | time=93.54 min | steps=5296
+2026-07-18 21:49:44 | INFO | Epoch 14/100 | Val start   | batches=605
+2026-07-18 21:53:22 | INFO | Epoch 14/100 | Val done   | val_loss=-0.073970 | time=3.64 min | steps=605
+2026-07-18 21:53:22 | INFO | Epoch 14/100 | lr=0.00100000 | best_val=-0.073970 | saved=model_best.pth
+2026-07-18 21:53:22 | INFO | Epoch 15/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-18 23:33:25 | INFO | Epoch 15/100 | Train done | train_loss=-0.082846 | time=100.04 min | steps=5296
+2026-07-18 23:33:25 | INFO | Epoch 15/100 | Val start   | batches=605
+2026-07-18 23:37:39 | INFO | Epoch 15/100 | Val done   | val_loss=-0.077333 | time=4.24 min | steps=605
+2026-07-18 23:37:39 | INFO | Epoch 15/100 | lr=0.00100000 | best_val=-0.077333 | saved=model_best.pth
+2026-07-18 23:37:39 | INFO | Epoch 16/100 | Train start | batches=5296 | lr=0.00100000
+2026-07-19 01:23:06 | INFO | Epoch 16/100 | Train done | train_loss=-0.083887 | time=105.44 min | steps=5296
+2026-07-19 01:23:06 | INFO | Epoch 16/100 | Val start   | batches=605
+2026-07-19 01:27:26 | INFO | Epoch 16/100 | Val done   | val_loss=-0.075406 | time=4.34 min | steps=605
+2026-07-19 01:27:26 | INFO | Epoch 16/100 | val not improved | lr adjusted to 0.00050000 | no_impv=1
+2026-07-19 01:27:27 | INFO | Epoch 17/100 | Train start | batches=5296 | lr=0.00050000
+2026-07-19 03:11:55 | INFO | Epoch 17/100 | Train done | train_loss=-0.087504 | time=104.47 min | steps=5296
+2026-07-19 03:11:55 | INFO | Epoch 17/100 | Val start   | batches=605
+2026-07-19 03:16:12 | INFO | Epoch 17/100 | Val done   | val_loss=-0.078916 | time=4.29 min | steps=605
+2026-07-19 03:16:12 | INFO | Epoch 17/100 | lr=0.00050000 | best_val=-0.078916 | saved=model_best.pth
+2026-07-19 03:16:13 | INFO | Epoch 18/100 | Train start | batches=5296 | lr=0.00050000
+2026-07-19 05:01:30 | INFO | Epoch 18/100 | Train done | train_loss=-0.088792 | time=105.30 min | steps=5296
+2026-07-19 05:01:30 | INFO | Epoch 18/100 | Val start   | batches=605
+2026-07-19 05:05:54 | INFO | Epoch 18/100 | Val done   | val_loss=-0.071637 | time=4.39 min | steps=605
+2026-07-19 05:05:54 | INFO | Epoch 18/100 | val not improved | lr adjusted to 0.00025000 | no_impv=1
+2026-07-19 05:05:54 | INFO | Epoch 19/100 | Train start | batches=5296 | lr=0.00025000
+2026-07-19 06:51:17 | INFO | Epoch 19/100 | Train done | train_loss=-0.090925 | time=105.38 min | steps=5296
+2026-07-19 06:51:17 | INFO | Epoch 19/100 | Val start   | batches=605
+2026-07-19 06:55:35 | INFO | Epoch 19/100 | Val done   | val_loss=-0.079716 | time=4.30 min | steps=605
+2026-07-19 06:55:35 | INFO | Epoch 19/100 | lr=0.00025000 | best_val=-0.079716 | saved=model_best.pth
+2026-07-19 06:55:36 | INFO | Epoch 20/100 | Train start | batches=5296 | lr=0.00025000
+2026-07-19 08:41:19 | INFO | Epoch 20/100 | Train done | train_loss=-0.091651 | time=105.72 min | steps=5296
+2026-07-19 08:41:19 | INFO | Epoch 20/100 | Val start   | batches=605
+2026-07-19 08:45:58 | INFO | Epoch 20/100 | Val done   | val_loss=-0.078812 | time=4.66 min | steps=605
+2026-07-19 08:45:58 | INFO | Epoch 20/100 | val not improved | lr adjusted to 0.00012500 | no_impv=1
+2026-07-19 08:45:58 | INFO | Epoch 21/100 | Train start | batches=5296 | lr=0.00012500
+2026-07-19 10:33:20 | INFO | Epoch 21/100 | Train done | train_loss=-0.092848 | time=107.36 min | steps=5296
+2026-07-19 10:33:20 | INFO | Epoch 21/100 | Val start   | batches=605
+2026-07-19 10:37:56 | INFO | Epoch 21/100 | Val done   | val_loss=-0.079806 | time=4.60 min | steps=605
+2026-07-19 10:37:56 | INFO | Epoch 21/100 | lr=0.00012500 | best_val=-0.079806 | saved=model_best.pth
+2026-07-19 10:37:56 | INFO | Epoch 22/100 | Train start | batches=5296 | lr=0.00012500
+2026-07-19 12:27:03 | INFO | Epoch 22/100 | Train done | train_loss=-0.093235 | time=109.11 min | steps=5296
+2026-07-19 12:27:03 | INFO | Epoch 22/100 | Val start   | batches=605
+2026-07-19 12:31:43 | INFO | Epoch 22/100 | Val done   | val_loss=-0.079636 | time=4.67 min | steps=605
+2026-07-19 12:31:43 | INFO | Epoch 22/100 | val not improved | lr adjusted to 0.00006250 | no_impv=1
+2026-07-19 12:31:43 | INFO | Epoch 23/100 | Train start | batches=5296 | lr=0.00006250
+2026-07-19 14:17:44 | INFO | Epoch 23/100 | Train done | train_loss=-0.093891 | time=106.00 min | steps=5296
+2026-07-19 14:17:44 | INFO | Epoch 23/100 | Val start   | batches=605
+2026-07-19 14:22:01 | INFO | Epoch 23/100 | Val done   | val_loss=-0.079889 | time=4.29 min | steps=605
+2026-07-19 14:22:01 | INFO | Epoch 23/100 | lr=0.00006250 | best_val=-0.079889 | saved=model_best.pth
+2026-07-19 14:22:01 | INFO | Epoch 24/100 | Train start | batches=5296 | lr=0.00006250
+2026-07-19 16:10:23 | INFO | Epoch 24/100 | Train done | train_loss=-0.094083 | time=108.37 min | steps=5296
+2026-07-19 16:10:23 | INFO | Epoch 24/100 | Val start   | batches=605
+2026-07-19 16:14:57 | INFO | Epoch 24/100 | Val done   | val_loss=-0.079873 | time=4.57 min | steps=605
+2026-07-19 16:14:57 | INFO | Epoch 24/100 | val not improved | lr adjusted to 0.00003125 | no_impv=1
+2026-07-19 16:14:58 | INFO | Epoch 25/100 | Train start | batches=5296 | lr=0.00003125
+2026-07-19 18:04:00 | INFO | Epoch 25/100 | Train done | train_loss=-0.094430 | time=109.04 min | steps=5296
+2026-07-19 18:04:00 | INFO | Epoch 25/100 | Val start   | batches=605
+2026-07-19 18:08:39 | INFO | Epoch 25/100 | Val done   | val_loss=-0.079753 | time=4.66 min | steps=605
+2026-07-19 18:08:40 | INFO | Epoch 25/100 | val not improved | lr adjusted to 0.00001563 | no_impv=2
+2026-07-19 18:08:40 | INFO | Epoch 26/100 | Train start | batches=5296 | lr=0.00001563
+2026-07-19 19:56:35 | INFO | Epoch 26/100 | Train done | train_loss=-0.094624 | time=107.92 min | steps=5296
+2026-07-19 19:56:35 | INFO | Epoch 26/100 | Val start   | batches=605
+2026-07-19 20:01:15 | INFO | Epoch 26/100 | Val done   | val_loss=-0.079656 | time=4.67 min | steps=605
+2026-07-19 20:01:15 | INFO | Epoch 26/100 | val not improved | lr adjusted to 0.00000781 | no_impv=3
+2026-07-19 20:01:15 | INFO | Epoch 27/100 | Train start | batches=5296 | lr=0.00000781
+2026-07-19 21:50:46 | INFO | Epoch 27/100 | Train done | train_loss=-0.094723 | time=109.51 min | steps=5296
+2026-07-19 21:50:46 | INFO | Epoch 27/100 | Val start   | batches=605
+2026-07-19 21:55:21 | INFO | Epoch 27/100 | Val done   | val_loss=-0.079697 | time=4.58 min | steps=605
+2026-07-19 21:55:21 | INFO | Epoch 27/100 | val not improved | lr adjusted to 0.00000391 | no_impv=4
+2026-07-19 21:55:21 | INFO | Epoch 28/100 | Train start | batches=5296 | lr=0.00000391
+2026-07-19 23:44:41 | INFO | Epoch 28/100 | Train done | train_loss=-0.094774 | time=109.33 min | steps=5296
+2026-07-19 23:44:41 | INFO | Epoch 28/100 | Val start   | batches=605
+2026-07-19 23:49:03 | INFO | Epoch 28/100 | Val done   | val_loss=-0.079798 | time=4.38 min | steps=605
+2026-07-19 23:49:03 | INFO | Epoch 28/100 | val not improved | lr adjusted to 0.00000195 | no_impv=5
+2026-07-19 23:49:03 | INFO | No improvements for 5 epochs, early stopping.
+2026-07-19 23:49:04 | INFO | Training finished.
