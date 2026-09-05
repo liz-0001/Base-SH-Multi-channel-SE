@@ -21,9 +21,18 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def get_mic_path(mic_dir, mic_prefix, utt_id):
-    mic_id = utt_id.split('#')[2].split('rir', 1)[-1]
+    mic_id = utt_id.split('#')[2].split('rir', 1)[-1].lstrip('_')
     mic_id = mic_id.removesuffix('.wav').removesuffix('.npy')
-    return os.path.join(mic_dir, mic_prefix + mic_id + '.npy')
+    candidates = [
+        os.path.join(mic_dir, mic_prefix + mic_id + '.npy'),
+        os.path.join(mic_dir, mic_prefix.rstrip('_') + '_' + mic_id + '.npy'),
+        os.path.join(mic_dir, 'mic_' + mic_id + '.npy'),
+        os.path.join(mic_dir, 'mic_array_pos_' + mic_id + '.npy'),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return candidates[0]
 
 
 def audioread(path, fs=16000):
