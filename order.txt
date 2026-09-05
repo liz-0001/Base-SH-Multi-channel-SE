@@ -175,3 +175,22 @@ ADFS-style high-low guidance 后每阶 shape 不变
 adjacent interaction 后每阶 shape 不变
 concat + fuse 后能回到 emb_dim
 ```
+
+条件
+python inference.py \
+  --gpus 0 \
+  --file_path /data/lizhe/SH_data/Mic8_2s_gpurir \
+  --modelpath model_grouping_inter_adfs_mse_sisdr_stft_8mic \
+  --model_name model_best.pth \
+  --test_name mic_8_snr3_t603_1000 \
+  --mic_test_name mic_8 \
+  --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_model_grouping_inter_adfs_mse_sisdr_stft_8mic_test_mic_8_snr3_t603_1000
+
+python evaluation_fixed.py \
+  --gpus 0 \
+  --dataset_root /data/lizhe/SH_data/Mic8_2s_gpurir \
+  --modelpath model_grouping_inter_adfs_mse_sisdr_stft_8mic \
+  --model_name model_best.pth \
+  --test_name mic_8_snr3_t603_1000 \
+  --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_model_grouping_inter_adfs_mse_sisdr_stft_8mic_test_mic_8_snr3_t603_1000 \
+  --save_dir model_grouping_inter_adfs_mse_sisdr_stft_8mic/eval_mic_8_snr3_t603_1000

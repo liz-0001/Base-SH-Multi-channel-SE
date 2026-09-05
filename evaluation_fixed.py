@@ -9,6 +9,7 @@ Modified for Mic8_2s_gpurir evaluation
 import os
 import fnmatch
 import argparse
+import re
 import numpy as np
 import pandas as pd
 import scipy.io as io
@@ -272,6 +273,79 @@ def safe_metric_compute(clean, mix, est, sr=16000):
     return results
 
 
+def parse_float_or_nan(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return np.nan
+
+
+def parse_conditions_from_filename(utt_id):
+    text = os.path.basename(utt_id)
+    stem = text[:-4] if text.lower().endswith(".wav") else text
+    hash_parts = stem.split("#")
+    if len(hash_parts) >= 6:
+        return parse_float_or_nan(hash_parts[-2]), parse_float_or_nan(hash_parts[-1])
+
+    snr_match = re.search(r"(?:^|[^A-Za-z0-9])snr\s*[=:_-]?\s*(-?\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    t60_match = re.search(r"(?:^|[^A-Za-z0-9])(?:t60|rt60)\s*[=:_-]?\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    snr = parse_float_or_nan(snr_match.group(1)) if snr_match else np.nan
+    t60 = parse_float_or_nan(t60_match.group(1)) if t60_match else np.nan
+    return snr, t60
+
+
+def make_group_summary(detail, group_columns, profile_info):
+    metric_columns = [
+        'pesq_mix',
+        'pesq_est',
+        'pesq_improvement',
+        'stoi_mix',
+        'stoi_est',
+        'stoi_improvement',
+        'sdr_mix',
+        'sdr_est',
+        'sdr_improvement',
+        'si_sdr_mix',
+        'si_sdr_est',
+        'si_sdr_improvement',
+    ]
+    if any(column not in detail.columns for column in group_columns):
+        return pd.DataFrame()
+    grouped_detail = detail.dropna(subset=group_columns)
+    if grouped_detail.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for group_values, group in grouped_detail.groupby(group_columns, dropna=True):
+        if not isinstance(group_values, tuple):
+            group_values = (group_values,)
+        row = {column: value for column, value in zip(group_columns, group_values)}
+        if len(group_columns) > 1:
+            row['condition_group'] = "_".join(
+                f"{column}_{float(value):g}" for column, value in zip(group_columns, group_values)
+            )
+        row['num_eval_utterances'] = float(len(group))
+        row.update({column: float(group[column].mean()) for column in metric_columns})
+        for column in [
+            'parameters_total',
+            'parameters_trainable',
+            'parameters_frozen',
+            'macs',
+            'flops_approx',
+            'thop_params',
+        ]:
+            row[column] = profile_info.get(column, np.nan)
+        rows.append(row)
+
+    summary = pd.DataFrame(rows)
+    sort_keys = []
+    for column in group_columns:
+        sort_key = f"_{column}_sort_key"
+        summary[sort_key] = pd.to_numeric(summary[column], errors='coerce')
+        sort_keys.extend([sort_key, column])
+    return summary.sort_values(sort_keys).drop(columns=[key for key in summary.columns if key.endswith("_sort_key")])
+
+
 if __name__ == "__main__":
     args = get_args()
     # grouping-inter-sds branch: always profile the full SH interaction frontend.
@@ -367,6 +441,9 @@ if __name__ == "__main__":
 
             metrics = safe_metric_compute(s, y, x, sr=16000)
             metrics['utt_id'] = utt_id_wav
+            snr, t60 = parse_conditions_from_filename(utt_id_wav)
+            metrics['snr'] = snr
+            metrics['t60'] = t60
             records.append(metrics)
 
             if (idx + 1) % 50 == 0:
@@ -384,6 +461,12 @@ if __name__ == "__main__":
         raise RuntimeError("No valid utterances were evaluated. Please check prediction_path and file names.")
 
     df_detail = pd.DataFrame(records)
+    print("========== Condition Labels ==========")
+    for column in ['snr', 't60']:
+        valid_count = int(df_detail[column].notna().sum())
+        values = sorted(df_detail[column].dropna().unique().tolist())
+        print(f"{column:<16}: {valid_count}/{len(df_detail)} labeled | values={values}")
+    print("======================================")
 
     summary = {
         'pesq_mix': df_detail['pesq_mix'].mean(),
@@ -425,6 +508,24 @@ if __name__ == "__main__":
     summary_csv = os.path.join(save_dir, f'{test_name}_summary_metrics.csv')
     df_summary.to_csv(summary_csv, encoding='utf-8-sig')
 
+    snr_summary = make_group_summary(df_detail, ['snr'], profile_info)
+    t60_summary = make_group_summary(df_detail, ['t60'], profile_info)
+    snr_t60_summary = make_group_summary(df_detail, ['snr', 't60'], profile_info)
+    t60_snr_summary = make_group_summary(df_detail, ['t60', 'snr'], profile_info)
+
+    snr_csv = os.path.join(save_dir, f'{test_name}_snr_summary_metrics.csv')
+    t60_csv = os.path.join(save_dir, f'{test_name}_t60_summary_metrics.csv')
+    snr_t60_csv = os.path.join(save_dir, f'{test_name}_snr_t60_summary_metrics.csv')
+    t60_snr_csv = os.path.join(save_dir, f'{test_name}_t60_snr_summary_metrics.csv')
+    if not snr_summary.empty:
+        snr_summary.to_csv(snr_csv, index=False, encoding='utf-8-sig')
+    if not t60_summary.empty:
+        t60_summary.to_csv(t60_csv, index=False, encoding='utf-8-sig')
+    if not snr_t60_summary.empty:
+        snr_t60_summary.to_csv(snr_t60_csv, index=False, encoding='utf-8-sig')
+    if not t60_snr_summary.empty:
+        t60_snr_summary.to_csv(t60_snr_csv, index=False, encoding='utf-8-sig')
+
     # 保存 mat
     mat_path = os.path.join(save_dir, f'{test_name}_metrics.mat')
     io.savemat(
@@ -454,4 +555,12 @@ if __name__ == "__main__":
     print("Saved files:")
     print(detail_csv)
     print(summary_csv)
+    if not snr_summary.empty:
+        print(snr_csv)
+    if not t60_summary.empty:
+        print(t60_csv)
+    if not snr_t60_summary.empty:
+        print(snr_t60_csv)
+    if not t60_snr_summary.empty:
+        print(t60_snr_csv)
     print(mat_path)

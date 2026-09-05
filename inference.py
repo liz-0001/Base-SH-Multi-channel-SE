@@ -92,6 +92,8 @@ if __name__ == "__main__":
                          default="/data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/test_rir")
     _parser.add_argument("--mic_prefix", type=str, default="mic_array_pos")
     _parser.add_argument("--test_name", type=str, default="mic_8")
+    _parser.add_argument("--mic_test_name", type=str, default="",
+                         help="MIC geometry test directory name. Default uses test_name; set to mic_8 for condition splits generated from mic_8.")
     _parser.add_argument("--gpus", type=str, default="0")
     _parser.add_argument("--prediction_path", type=str, default="", help="增强 wav 保存目录；默认保存到 dataset root 下")
     _parser.add_argument("--sh_order", type=int, default=4)
@@ -120,7 +122,8 @@ if __name__ == "__main__":
     for test_name in test_list:
         test_wav_scp = os.path.join(file_path, 'loader_txt', 'wav_scp', 'wav_scp_test_' + test_name + '.txt')
         wav_path = os.path.join(file_path, 'generated_data', 'test_' + test_name, 'mix')
-        mic_dir = os.path.join(mic_path_root, test_name, 'MIC')
+        mic_test_name = _inf_args.mic_test_name.strip() or test_name
+        mic_dir = os.path.join(mic_path_root, mic_test_name, 'MIC')
 
         modelname = os.path.join(modelpath, _inf_args.model_name)
 
@@ -134,6 +137,7 @@ if __name__ == "__main__":
         print(str(modelname))
         print("Processing test ..." + str(test_name))
         print("Using device:", device)
+        print("MIC geometry dir:", mic_dir)
         print("Prediction wav save dir:", pred_save_dir)
 
         load_network = TFGridNetV2(
