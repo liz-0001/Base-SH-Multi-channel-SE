@@ -1,9 +1,24 @@
-# TFG 8Mic Baseline
+# Order-Aware Spherical Harmonic Speech Enhancement (8Mic)
 
-This branch is for reproducing the 8-microphone serial TFGridNet baseline from the
-SH-injection project. The model input is 4th-order real spherical harmonic
-coefficients generated from 8-channel microphone signals, so the network input
-dimension is 25.
+This branch implements the proposed **order-aware spherical harmonic (SH) front end** for eight-microphone speech enhancement. It groups SH features by order, exchanges information between low and high orders, and models interactions between adjacent orders before passing the fused features to TF-GridNetV2.
+
+The experiments use a simulated eight-microphone circular array and the MS-SNSD speech and noise data.
+
+## Method
+
+The model processes each mixture as follows:
+
+1. Read the eight microphone signals and their saved array coordinates.
+2. Project the signals onto a fourth-order real SH basis, producing 25 SH feature channels.
+3. Apply STFT and concatenate real and imaginary components.
+4. Split the features into five SH-order groups containing 1, 3, 5, 7, and 9 SH channels, respectively.
+5. Encode each order group separately into 32-dimensional features.
+6. Exchange information between the low-order group `{0, 1}` and high-order group `{2, 3, 4}` using gated mutual guidance.
+7. Apply gated interactions between adjacent orders.
+8. Fuse the order features and pass them to TF-GridNetV2 to predict the enhanced complex spectrum.
+9. Apply inverse STFT to obtain the enhanced waveform.
+
+The SH projection is used as a structured feature encoding. It is not intended to recover a unique fourth-order three-dimensional sound field from eight microphones.
 
 ## Project Structure
 
@@ -25,50 +40,37 @@ dimension is 25.
     └── untrack_artifacts.sh
 ```
 
-The current source tree keeps only code related to training, inference,
-evaluation, data loading, and 8Mic data preparation. Runtime
-outputs such as logs, TensorBoard events, checkpoints, caches, and old experiment
-records are intentionally not kept in the source tree.
+`train.py` and `inference.py` must instantiate the proposed order-aware model. The data loader supplies the eight-channel mixture and the corresponding microphone coordinates. TF-GridNetV2 serves as the enhancement backbone.
 
-## Baseline Dataset
+Check this tree against the proposed branch before publishing, especially if the order-aware front end is stored in a separate file under `networks/`.
 
-The TFG-serial implementation and data preparation scripts used here come from
-the original repository's `SH_Generalization_num` directory because that is where
-the author provides the TFG serial code. This branch does not run the full
-microphone-number generalization experiment; it only reproduces the 8Mic
-TFG-serial PESQ/STOI setting.
+## Dataset
 
-The paper/code baseline uses:
+The data preparation workflow is adapted from the `SH_Generalization_num` directory of the SH-injection project. This branch uses its eight-microphone setting; it does not run the full microphone-number generalization experiment.
 
-- Clean/noise corpus: MS-SNSD split into train, validation, and test lists.
-- Room simulation: gpuRIR.
-- Microphone array: circular 8-microphone array.
-- Test condition used in this branch: `mic_8` only.
-- Sample rate: 16 kHz.
-- Segment length: 2 seconds in this branch.
-- SNR range in the data generation scripts: `[-10, 10]` dB.
-- RT60 range in the RIR scripts: roughly `[0.1, 1.0]` seconds from the current
-  author script implementation.
-- Room size in the author scripts: `[6, 5, 4]` meters.
+| Item | Setting |
+| --- | --- |
+| Clean speech and noise | MS-SNSD |
+| Room impulse responses | gpuRIR |
+| Array | Eight-microphone uniform circular array |
+| Array radius | 0.35 m |
+| Sample rate | 16 kHz |
+| Training segment length | 2 s |
+| Room size | 6 × 5 × 4 m |
+| Test array | `mic_8` |
 
-The generated dataset expected by this branch is named:
-
-```text
-Mic8_2s_gpurir
-```
-
-Default dataset root used by training/inference/evaluation:
+The expected dataset name is `Mic8_2s_gpurir`. The default dataset root in the existing scripts is:
 
 ```text
 /data/lizhe/SH_data/Mic8_2s_gpurir
 ```
 
-Change this path if your server stores the dataset elsewhere.
+Update the script paths if the dataset is stored elsewhere.
 
-## Expected Dataset Layout
+### Expected Dataset Layout
 
 ```text
-/data/lizhe/SH_data/Mic8_2s_gpurir/
+Mic8_2s_gpurir/
 ├── loader_txt/
 │   ├── rir/
 │   │   ├── rir_train_val.txt
@@ -110,283 +112,123 @@ Change this path if your server stores the dataset elsewhere.
         └── noreverb_ref/
 ```
 
-`wav_scp` entries must match generated wav names. The dataloader and inference
-code use the `rir` id embedded in each utterance name to find the corresponding
-microphone geometry file:
+The `wav_scp` entries must match the generated WAV filenames. The data loader and inference code use the RIR ID in each filename to locate its microphone-coordinate file under the corresponding `MIC/` directory.
 
-```text
-RIR/cir_uniform_8/train_val_rir/MIC/mic_array_pos*.npy
-RIR/cir_uniform_8/test_rir/mic_8/MIC/mic_array_pos*.npy
-```
+## Data Preparation
 
-## Data Preparation Scripts
-
-The data preparation scripts are kept as third-party reference code:
+The reference scripts are located in:
 
 ```text
 third_party/SH_injection/SH_Generalization_num/Data_prepare/
 ```
 
-For 8Mic reproduction, use these scripts:
+Before running them, replace their hardcoded `/ddnstor/...` paths with paths under your dataset root. Set the test RIR generator to produce the `mic_8` configuration.
 
-```text
-genRIR_train_val.py      # Generate train/validation 8Mic RIR and MIC geometry
-genRIR_test.py           # Generate test RIR/MIC geometry; keep only mic_8 if reproducing 8Mic
-gen_mix_train.py         # Generate train mix/reverb_ref/noreverb_ref and wav_scp_train.txt
-gen_mix_val.py           # Generate validation mix/reverb_ref/noreverb_ref and wav_scp_val.txt
-gen_mix_test_num8.py     # Generate 8Mic test mix/reverb_ref/noreverb_ref and wav_scp_test_mic_8.txt
-tools.py                 # Helper functions used by data generation scripts
-```
-
-### Paths To Modify Before Running
-
-The author scripts still contain hardcoded `/ddnstor/...` paths. Replace them
-with your actual dataset root before running.
-
-Use this root consistently:
-
-```text
-TODO_PATH_DATA_ROOT=/data/lizhe/SH_data/Mic8_2s_gpurir
-```
-
-In `genRIR_train_val.py`, modify:
-
-```python
-out_path = "TODO_PATH_DATA_ROOT/RIR/cir_uniform_8/train_val_rir/"
-txt_path = "TODO_PATH_DATA_ROOT/loader_txt/rir/"
-```
-
-In `genRIR_test.py`, modify the loop or hardcoded path so the 8Mic output is:
-
-```python
-out_path = "TODO_PATH_DATA_ROOT/RIR/cir_uniform_8/test_rir/mic_8/"
-txt_path = "TODO_PATH_DATA_ROOT/loader_txt/rir/"
-```
-
-If you only reproduce 8Mic, you can change the test microphone loop to:
-
-```python
-for num_mics in [8]:
-    ...
-```
-
-In `gen_mix_train.py`, modify:
-
-```python
---clean_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/train_clean_list.txt
---noise_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/train_noise_list.txt
---rir_wav_list    TODO_PATH_DATA_ROOT/loader_txt/rir/rir_train_val.txt
---config_path     TODO_PATH_DATA_ROOT/generated_data/train/mix_train.config
---save_path       TODO_PATH_DATA_ROOT/generated_data/train
-```
-
-Also replace the hardcoded output path for:
-
-```text
-TODO_PATH_DATA_ROOT/loader_txt/wav_scp/wav_scp_train.txt
-```
-
-In `gen_mix_val.py`, modify:
-
-```python
---clean_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/val_clean_list.txt
---noise_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/val_noise_list.txt
---rir_wav_list    TODO_PATH_DATA_ROOT/loader_txt/rir/rir_train_val.txt
---config_path     TODO_PATH_DATA_ROOT/generated_data/val/mix_val.config
---save_path       TODO_PATH_DATA_ROOT/generated_data/val
-```
-
-Also replace the hardcoded output path for:
-
-```text
-TODO_PATH_DATA_ROOT/loader_txt/wav_scp/wav_scp_val.txt
-```
-
-In `gen_mix_test_num8.py`, modify:
-
-```python
---clean_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/test_clean_list.txt
---noise_wav_list  TODO_PATH_DATA_ROOT/loader_txt/wav_list/test_noise_list.txt
---rir_wav_list    TODO_PATH_DATA_ROOT/loader_txt/rir/rir_test_mic_8.txt
---config_path     TODO_PATH_DATA_ROOT/generated_data/test_mic_8/mix_test_mic_8.config
---save_path       TODO_PATH_DATA_ROOT/generated_data/test_mic_8
-```
-
-Also replace the hardcoded output path for:
-
-```text
-TODO_PATH_DATA_ROOT/loader_txt/wav_scp/wav_scp_test_mic_8.txt
-```
-
-### Data Preparation Order
-
-1. Prepare MS-SNSD clean/noise wav lists.
-
-```bash
-mkdir -p /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list
-
-find TODO_PATH_MS_SNSD/clean_train -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/train_clean_list.txt
-find TODO_PATH_MS_SNSD/noise_train -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/train_noise_list.txt
-find TODO_PATH_MS_SNSD/clean_val -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/val_clean_list.txt
-find TODO_PATH_MS_SNSD/noise_val -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/val_noise_list.txt
-find TODO_PATH_MS_SNSD/clean_test -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/test_clean_list.txt
-find TODO_PATH_MS_SNSD/noise_test -name "*.wav" | sort > /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_list/test_noise_list.txt
-```
-
-2. Generate train/validation RIR and microphone geometry.
+Run the scripts in this order:
 
 ```bash
 python third_party/SH_injection/SH_Generalization_num/Data_prepare/genRIR_train_val.py
-```
-
-3. Generate 8Mic test RIR and microphone geometry.
-
-```bash
 python third_party/SH_injection/SH_Generalization_num/Data_prepare/genRIR_test.py
-```
 
-4. Generate train mixtures.
-
-```bash
 python third_party/SH_injection/SH_Generalization_num/Data_prepare/gen_mix_train.py \
-  --chunk_len 2 \
-  --num_process 8
-```
+  --chunk_len 2 --num_process 8
 
-5. Generate validation mixtures.
-
-```bash
 python third_party/SH_injection/SH_Generalization_num/Data_prepare/gen_mix_val.py \
-  --chunk_len 2 \
-  --num_process 8
-```
+  --chunk_len 2 --num_process 8
 
-6. Generate 8Mic test mixtures.
-
-```bash
 python third_party/SH_injection/SH_Generalization_num/Data_prepare/gen_mix_test_num8.py \
-  --chunk_len 2 \
-  --num_process 8
+  --chunk_len 2 --num_process 8
 ```
 
-The mix scripts write three parallel targets:
+Prepare the six clean/noise file lists under `loader_txt/wav_list/` before generating mixtures. The scripts should also write the RIR lists and `wav_scp` files shown in the dataset layout.
 
-- `mix/`: noisy multi-channel mixture.
-- `reverb_ref/`: reverberant clean speech.
-- `noreverb_ref/`: early/direct clean reference used by the current training and evaluation scripts.
+The generated targets are:
 
-## Training
+- `mix/`: noisy eight-channel mixture;
+- `reverb_ref/`: reverberant clean speech;
+- `noreverb_ref/`: clean reference used by the current training and evaluation workflow.
 
-Install dependencies:
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Run 8Mic baseline training:
+The data generation scripts additionally require their simulation dependencies, including gpuRIR.
+
+## Training
+
+The paper trains the order-aware variants and the SH-only baseline with the same objective:
+
+```text
+MixLoss = MSE loss + 0.01 × SI-SDR loss + 0.5 × STFT loss
+```
+
+The reported setup uses Adam, an initial learning rate of `1e-3`, a batch size of `8`, and up to `100` epochs. The checkpoint with the lowest validation loss is selected for evaluation.
+
+After confirming that `train.py` instantiates the order-aware model and uses MixLoss, run:
 
 ```bash
 python train.py \
   --num_epoch 100 \
-  --batch_size 2 \
+  --batch_size 8 \
   --num_worker 0 \
-  --model_dir model_tfg_serial_8mic
+  --model_dir model_order_aware_sh_8mic
 ```
 
-Important default paths in `train.py`:
+The existing path defaults in `train.py` point to the `Mic8_2s_gpurir` training and validation lists, mixtures, `noreverb_ref` targets, and microphone-coordinate directories. Change those defaults or pass the corresponding path arguments if your dataset is stored elsewhere.
 
-```text
---train_wav_scp  /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_train.txt
---train_mix_dir  /data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/mix
---train_ref_dir  /data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/train/noreverb_ref
---train_mic_dir  /data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC
---val_wav_scp    /data/lizhe/SH_data/Mic8_2s_gpurir/loader_txt/wav_scp/wav_scp_val.txt
---val_mix_dir    /data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/mix
---val_ref_dir    /data/lizhe/SH_data/Mic8_2s_gpurir/generated_data/val/noreverb_ref
---val_mic_dir    /data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/train_val_rir/MIC
-```
-
-Training saves checkpoints and loss curves to:
-
-```text
-model_tfg_serial_8mic/
-```
+Checkpoints and training records are written to the directory passed through `--model_dir`.
 
 ## Inference
 
-Run 8Mic inference with the best checkpoint:
+Run inference using the best validation checkpoint:
 
 ```bash
 python inference.py \
-  --modelpath model_tfg_serial_8mic \
+  --modelpath model_order_aware_sh_8mic \
   --model_name model_best.pth \
   --test_name mic_8 \
   --file_path /data/lizhe/SH_data/Mic8_2s_gpurir \
   --mic_path_root /data/lizhe/SH_data/Mic8_2s_gpurir/RIR/cir_uniform_8/test_rir
 ```
 
-Enhanced wavs are saved to:
-
-```text
-/data/lizhe/SH_data/Mic8_2s_gpurir/predictions_tfg_serial_test_mic_8/
-```
-
-`inference.py` also prints average PESQ/STOI and saves a `.mat` summary under:
-
-```text
-model_tfg_serial_8mic/result_model_best/
-```
+Before running this command, confirm that `inference.py` loads the same order-aware model definition used during training. Note the directory in which it writes enhanced WAV files; use that directory for the evaluation command below.
 
 ## Evaluation
-
-Run detailed evaluation after inference:
 
 ```bash
 python evaluation_fixed.py \
   --dataset_root /data/lizhe/SH_data/Mic8_2s_gpurir \
-  --prediction_path /data/lizhe/SH_data/Mic8_2s_gpurir/predictions_tfg_serial_test_mic_8 \
+  --prediction_path PATH_TO_PROPOSED_PREDICTIONS \
   --test_name mic_8
 ```
 
-The evaluation script reports and saves:
+The evaluation script reports PESQ, STOI, SDR, and SI-SDR, and saves per-utterance and average results.
 
-- PESQ
-- STOI
-- SDR
-- SI-SDR
-- per-utterance CSV
-- average summary CSV
-- MATLAB `.mat` file
+### Results Reported in the Paper
 
-## Model Input Processing
+All variants in the following comparison use MixLoss.
 
-During training and inference:
+| Model | PESQ | STOI (%) | SDR (dB) | SI-SDR (dB) |
+| --- | ---: | ---: | ---: | ---: |
+| SH-only baseline | 2.47 | 84.70 | 8.28 | 6.69 |
+| Order-wise grouping only | 2.52 | 85.75 | 8.41 | 6.94 |
+| Grouping + adjacent-order interaction | 2.61 | 86.80 | 8.86 | 7.42 |
+| Grouping + low/high-order guidance | 2.61 | 86.87 | 8.96 | 7.51 |
+| Full order-aware SH model | **2.63** | **87.25** | **9.13** | **7.72** |
 
-1. Read 8-channel mixture wav.
-2. Read microphone geometry from `mic_array_pos*.npy`.
-3. Convert Cartesian microphone positions to spherical coordinates.
-4. Convert the 8-channel mixture to 4th-order real spherical harmonic
-   coefficients with `spaudiopy.sph.src_to_sh`.
-5. Feed 25 SH coefficients into TFGridNetV2.
-
-The relevant code is:
-
-```text
-loader/IGCRN_dataloader.py
-inference.py
-networks/tfgridnetv2.py
-```
+These are the paper's reported results, not values automatically produced by a new run. The comparison isolates the proposed front end from the SH-only baseline under the same training objective.
 
 ## Cleanup
 
-Generated artifacts are ignored by `.gitignore`. To remove local runtime outputs:
+Runtime artifacts such as checkpoints, logs, TensorBoard events, caches, and predictions should remain outside Git tracking.
 
 ```bash
 bash scripts/clean_artifacts.sh
 ```
 
-If generated files were accidentally tracked, remove them from Git tracking while
-keeping local copies:
+If generated files were accidentally tracked, remove them from Git tracking while retaining local copies:
 
 ```bash
 bash scripts/untrack_artifacts.sh
